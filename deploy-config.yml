@@ -1,0 +1,54 @@
+# Jetlouge Fleet Management System - Deployment Configuration
+# FTP Deployment Settings for logistics2.jetlougetravels-ph.com
+
+deployment:
+  name: "Jetlouge Fleet Management"
+  target: "Production Domain"
+  
+ftp:
+  host: "23.94.230.146"
+  username: "logs2jetl_admin"
+  password: "Untitleddocument69"
+  port: 21
+  remote_dir: "/home/logistics2.jetlougetravels-ph.com/public_html"
+  
+# Files to exclude from deployment
+exclude:
+  - ".git/**"
+  - ".github/**"
+  - "test-db.php"
+  - "README.md"
+  - "deploy-config.yml"
+  - ".env.example"
+  - "*.log"
+  
+# Files to include (essential for production)
+include:
+  - "index.php"
+  - ".htaccess"
+  - "includes/**"
+  - "views/**"
+  - "public/**"
+  - "api/**"
+  - "database/setup.sql"
+  
+# Post-deployment tasks
+post_deploy:
+  - "Update database credentials in includes/database.php"
+  - "Import database/setup.sql to MySQL"
+  - "Set proper file permissions (755 for directories, 644 for files)"
+  - "Test login with admin/admin123"
+  - "Delete test-db.php after verification"
+  
+# Domain configuration
+domain:
+  url: "https://logistics2.jetlougetravels-ph.com"
+  ssl: true
+  
+# Database configuration (update after deployment)
+database:
+  host: "localhost"  # Usually localhost for shared hosting
+  name: "jetlouge_fleet"
+  # Update these in includes/database.php after deployment:
+  # username: "your_cpanel_db_user"
+  # password: "your_cpanel_db_password"

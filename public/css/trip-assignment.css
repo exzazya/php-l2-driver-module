@@ -1,0 +1,53 @@
+/* Mobile-friendly layout for Trip Assignments */
+@media (max-width: 575.98px) {
+  /* Header stacks on mobile */
+  .page-header { flex-direction: column; align-items: flex-start !important; gap: .5rem; }
+  .page-header .btn { width: 100%; }
+
+  /* Stats cards spacing */
+  .stats-card { margin-bottom: .5rem; }
+
+  /* Tables become card-like lists */
+  #assignmentsTable thead, #completedAssignmentsTable thead { display: none; }
+
+  #assignmentsTable tbody tr, #completedAssignmentsTable tbody tr {
+    display: block;
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 12px;
+    padding: .75rem 1rem;
+    margin-bottom: .75rem;
+  }
+
+  #assignmentsTable tbody td, #completedAssignmentsTable tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: .75rem;
+    border: 0 !important;
+    padding: .35rem 0;
+    word-break: break-word;
+  }
+
+  /* Special case for empty-state rows (colspan) */
+  #assignmentsTable tbody td[colspan], #completedAssignmentsTable tbody td[colspan] {
+    display: block;
+    text-align: center;
+    padding: 1rem 0;
+  }
+
+/* Labels for assignments table (5 cols) */
+#assignmentsTable tbody td:nth-child(1)::before { content: "Trip Details"; font-weight: 600; color: #6c757d; }
+#assignmentsTable tbody td:nth-child(2)::before { content: "Vehicle & Driver"; font-weight: 600; color: #6c757d; }
+#assignmentsTable tbody td:nth-child(3)::before { content: "Route Information"; font-weight: 600; color: #6c757d; }
+#assignmentsTable tbody td:nth-child(4)::before { content: "Schedule & Fare"; font-weight: 600; color: #6c757d; }
+#assignmentsTable tbody td:nth-child(5)::before { content: "Status"; font-weight: 600; color: #6c757d; }
+
+
+/* Labels for completed table (5 cols) */
+#completedAssignmentsTable tbody td:nth-child(1)::before { content: "Trip Details"; font-weight: 600; color: #6c757d; }
+#completedAssignmentsTable tbody td:nth-child(2)::before { content: "Vehicle & Driver"; font-weight: 600; color: #6c757d; }
+#completedAssignmentsTable tbody td:nth-child(3)::before { content: "Route Information"; font-weight: 600; color: #6c757d; }
+#completedAssignmentsTable tbody td:nth-child(4)::before { content: "Schedule & Fare"; font-weight: 600; color: #6c757d; }
+#completedAssignmentsTable tbody td:nth-child(5)::before { content: "Status"; font-weight: 600; color: #6c757d; }
+}
