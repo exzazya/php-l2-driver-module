@@ -5,7 +5,6 @@
 -- CREATE DATABASE logi_L2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 USE logi_L2;fleet;
-USE jetlouge_fleet;
 
 -- ============================================
 -- AUTHENTICATION & USER MANAGEMENT
@@ -18,6 +17,7 @@ CREATE TABLE IF NOT EXISTS admins (
     email VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
+    profile_image VARCHAR(255) NULL,
     role ENUM('super_admin', 'admin', 'manager') DEFAULT 'admin',
     status ENUM('active', 'inactive') DEFAULT 'active',
     last_login TIMESTAMP NULL,
@@ -25,17 +25,9 @@ CREATE TABLE IF NOT EXISTS admins (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Users table (for system users - requesters, dispatchers, etc.)
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    role ENUM('admin', 'requester', 'dispatcher', 'driver') NOT NULL,
-    status ENUM('active', 'inactive') DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+
+
+-- (Removed legacy users table; system now uses admins for requester/approver roles)
 
 -- API tokens table for authentication
 CREATE TABLE IF NOT EXISTS api_tokens (
@@ -47,6 +39,8 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
 );
 
+
+
 -- Sessions table for web login tracking
 CREATE TABLE IF NOT EXISTS admin_sessions (
     id VARCHAR(128) PRIMARY KEY,
@@ -56,6 +50,8 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
 );
+
+
 
 -- ============================================
 -- FLEET AND VEHICLE MANAGEMENT (FVM)
@@ -79,7 +75,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     fuel_type ENUM('gasoline', 'diesel', 'hybrid', 'electric') NOT NULL,
     
     -- Status and Operational Data
-    status ENUM('active', 'maintenance', 'inactive') NOT NULL DEFAULT 'active',
+    status ENUM('active', 'maintenance', 'inactive', 'on trip') NOT NULL DEFAULT 'active',
     current_mileage INT DEFAULT 0,
     total_kilometers INT DEFAULT 0,
     
@@ -87,11 +83,14 @@ CREATE TABLE IF NOT EXISTS vehicles (
     insurance_expiry DATE,
     notes TEXT,
     date_acquired DATE,
+    photo_path VARCHAR(255),
     
     -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+
 
 -- Vehicle Requests table - for requesting new vehicles
 CREATE TABLE IF NOT EXISTS vehicle_requests (
@@ -107,9 +106,11 @@ CREATE TABLE IF NOT EXISTS vehicle_requests (
     review_notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (requester_id) REFERENCES users(id),
+    FOREIGN KEY (requester_id) REFERENCES admins(id),
     FOREIGN KEY (reviewed_by) REFERENCES admins(id)
 );
+
+
 
 -- Maintenance Records table
 CREATE TABLE IF NOT EXISTS maintenance_records (
@@ -121,10 +122,28 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     cost DECIMAL(10, 2) DEFAULT 0.00,
     next_due_date DATE,
     performed_by VARCHAR(100),
+    shop_name VARCHAR(100) NULL,
+    receipt_image VARCHAR(255) NULL,
     odometer_reading INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
+);
+
+-- Maintenance Queue table (pending maintenance awaiting completion/receipt)
+CREATE TABLE IF NOT EXISTS maintenance_queue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    vehicle_id INT NOT NULL,
+    maintenance_type VARCHAR(50) NOT NULL,
+    description TEXT,
+    requested_by INT NULL,
+    requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    odometer_reading INT NULL,
+    priority ENUM('low','normal','high') DEFAULT 'normal',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+    FOREIGN KEY (requested_by) REFERENCES admins(id)
 );
 
 -- Vehicle Utilization table - for tracking usage patterns
@@ -188,7 +207,7 @@ CREATE TABLE IF NOT EXISTS driver_performance (
     review_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (driver_id) REFERENCES drivers(id),
-    FOREIGN KEY (reviewer_id) REFERENCES users(id)
+    FOREIGN KEY (reviewer_id) REFERENCES admins(id)
 );
 
 -- ============================================
@@ -215,10 +234,10 @@ CREATE TABLE IF NOT EXISTS reservations (
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (requester_id) REFERENCES users(id),
+    FOREIGN KEY (requester_id) REFERENCES admins(id),
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id),
     FOREIGN KEY (driver_id) REFERENCES drivers(id),
-    FOREIGN KEY (approved_by) REFERENCES users(id)
+    FOREIGN KEY (approved_by) REFERENCES admins(id)
 );
 
 -- Trips table - actual trip execution
@@ -311,48 +330,4 @@ CREATE TABLE IF NOT EXISTS fuel_records (
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id),
     FOREIGN KEY (trip_id) REFERENCES trips(id),
     FOREIGN KEY (filled_by) REFERENCES drivers(id)
-);
-
--- ============================================
--- INSERT DEFAULT DATA
--- ============================================
-
--- Insert default admin user (password: admin123)
-INSERT INTO admins (username, email, password_hash, full_name, role) VALUES 
-('admin', 'admin@jetlouge.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Franklin Carranza', 'super_admin')
-ON DUPLICATE KEY UPDATE username = username;
-
--- Insert sample users
-INSERT INTO users (name, email, password, role) VALUES 
-('John Dispatcher', 'dispatcher@jetlouge.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'dispatcher'),
-('Jane Requester', 'requester@jetlouge.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'requester')
-ON DUPLICATE KEY UPDATE name = name;
-
--- Insert sample vehicles
-INSERT INTO vehicles (make, model, year, plate_number, vehicle_type, passenger_capacity, fuel_type, status) VALUES 
-('Toyota', 'Hiace', 2022, 'JET-001', 'van', 15, 'diesel', 'active'),
-('Honda', 'Civic', 2021, 'JET-002', 'sedan', 5, 'gasoline', 'active'),
-('Ford', 'Transit', 2023, 'JET-003', 'bus', 20, 'diesel', 'active')
-ON DUPLICATE KEY UPDATE make = make;
-
--- Insert sample drivers (with password hashes for login)
-INSERT INTO drivers (name, email, license_number, license_expiry, phone, status) VALUES 
-('Mike Driver', 'mike@jetlouge.com', 'DL-001-2024', '2026-12-31', '+1234567890', 'active'),
-('Sarah Wilson', 'sarah@jetlouge.com', 'DL-002-2024', '2025-06-30', '+1234567891', 'active')
-ON DUPLICATE KEY UPDATE name = name;
-
--- Add password field to drivers table for login capability
-ALTER TABLE drivers ADD COLUMN password_hash VARCHAR(255) NULL AFTER email;
-
--- Update sample drivers with password hashes (password: driver123)
-UPDATE drivers SET password_hash = '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi' WHERE email IN ('mike@jetlouge.com', 'sarah@jetlouge.com');
-
--- Driver sessions table for web login tracking
-CREATE TABLE IF NOT EXISTS driver_sessions (
-    id VARCHAR(128) PRIMARY KEY,
-    driver_id INT NOT NULL,
-    ip_address VARCHAR(45),
-    user_agent TEXT,
-    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
 );

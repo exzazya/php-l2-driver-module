@@ -1,11 +1,27 @@
-@extends('layouts.app')
+<?php
+$title = "Trip Assignment";
+session_start();
+require 'db_connect.php'; // make sure this connects properly
 
-@section('content')
+if (!isset($_SESSION['driver_id'])) {
+    header("Location: index.php"); // redirect if not logged in
+    exit;
+}
+
+// Page-specific styles
+$styles = '<link rel="stylesheet" href="' . asset('css/trip-assignment.css') . '">';
+
+// Page-specific scripts
+$scripts = '<script src="' . asset('js/trip-assignment.js') . '"></script>';
+
+// Start capturing content
+ob_start();
+?>
 <div class="page-header-container mb-4">
     <div class="d-flex justify-content-between align-items-center page-header">
         <div class="d-flex align-items-center">
             <div class="dashboard-logo me-3">
-                <img src="{{ asset('img/jetlouge_logo.png') }}" alt="Jetlouge Travels" class="logo-img">
+                <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels" class="logo-img">
             </div>
             <div>
                 <h2 class="fw-bold mb-1">Trip Assignment</h2>
@@ -119,11 +135,9 @@
     </div>
 </div>
 
-@push('styles')
-<link rel="stylesheet" href="{{ asset('css/trip-assignment.css') }}">
-@endpush
+<?php
+$content = ob_get_clean();
 
-@push('scripts')
-<script src="{{ asset('js/trip-assignment.js') }}"></script>
-@endpush
-@endsection
+// Include the layout
+include __DIR__ . '/layouts/app.php';
+?>

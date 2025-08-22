@@ -1,11 +1,104 @@
-@extends('layouts.app')
+<?php
+$title = "Live Tracking";
+session_start();
+require 'db_connect.php'; // make sure this connects properly
 
-@section('content')
+if (!isset($_SESSION['driver_id'])) {
+    header("Location: index.php"); // redirect if not logged in
+    exit;
+}
+
+// Page-specific styles - Leaflet CSS
+$styles = '<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />';
+
+// Page-specific scripts - Leaflet JS and tracking scripts
+$scripts = '
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Set initial display values
+    function setInitialValues() {
+        document.getElementById("lastUpdate").textContent = "Waiting for data...";
+    }
+
+    // Button event listeners
+    document.getElementById("centerMapBtn").addEventListener("click", function() {
+        this.innerHTML = "<i class=\"fas fa-spinner fa-spin me-1\"></i>Centering...";
+        setTimeout(() => {
+            this.innerHTML = "<i class=\"fas fa-crosshairs me-1\"></i>Center Map";
+        }, 1000);
+    });
+
+    document.getElementById("refreshBtn").addEventListener("click", function() {
+        this.innerHTML = "<i class=\"fas fa-spinner fa-spin me-1\"></i>Refreshing...";
+        setTimeout(() => {
+            this.innerHTML = "<i class=\"fas fa-sync-alt me-1\"></i>Refresh";
+        }, 800);
+    });
+
+    // Initialize map centered on [0,0] until location is fetched
+    const map = L.map("map").setView([0, 0], 15);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "© OpenStreetMap"
+    }).addTo(map);
+
+    // Marker for driver/user
+    const driverMarker = L.marker([0,0]).addTo(map)
+        .bindPopup("<b>Driver: You</b>").openPopup();
+
+    // Function to update marker and info box
+    function updatePosition(lat, lng) {
+        driverMarker.setLatLng([lat, lng]);
+        map.setView([lat, lng], 15);
+    }
+
+    // Check for geolocation support
+    if (navigator.geolocation) {
+        // Watch position for real-time updates
+        navigator.geolocation.watchPosition(position => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) : 0; // m/s -> km/h
+
+            updatePosition(lat, lng);
+
+            // Update stats
+            document.getElementById("currentSpeed").textContent = speed + " km/h";
+            document.getElementById("lastUpdate").textContent = "Just updated";
+        }, error => {
+            console.error("Geolocation error:", error);
+            alert("Unable to fetch your location. Make sure location is enabled in your browser.");
+        }, {
+            enableHighAccuracy: true,
+            maximumAge: 3000,
+            timeout: 5000
+        });
+    } else {
+        alert("Geolocation is not supported by your browser.");
+    }
+
+    // Center map button
+    document.getElementById("centerMapBtn").addEventListener("click", function() {
+        if (driverMarker.getLatLng()) {
+            map.panTo(driverMarker.getLatLng(), { animate: true });
+        }
+    });
+
+    // Initialize display
+    setInitialValues();
+});
+</script>';
+
+// Start capturing content
+ob_start();
+?>
 <div class="page-header-container mb-4">
     <div class="d-flex justify-content-between align-items-center page-header">
         <div class="d-flex align-items-center">
             <div class="dashboard-logo me-3">
-                <img src="{{ asset('img/jetlouge_logo.png') }}" alt="Jetlouge Travels" class="logo-img">
+                <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels" class="logo-img">
             </div>
             <div>
                 <h2 class="fw-bold mb-1">Live Tracking</h2>
@@ -253,130 +346,9 @@
 
 
 </style>
-@push('scripts')
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Set initial display values
-    function setInitialValues() {
-        document.getElementById('lastUpdate').textContent = 'Waiting for data...';
-    }
+<?php
+$content = ob_get_clean();
 
-
-
-    // Button event listeners
-    document.getElementById('centerMapBtn').addEventListener('click', function() {
-        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Centering...';
-        setTimeout(() => {
-            this.innerHTML = '<i class="fas fa-crosshairs me-1"></i>Center Map';
-        }, 1000);
-    });
-
-    document.getElementById('refreshBtn').addEventListener('click', function() {
-        this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Refreshing...';
-        setTimeout(() => {
-            this.innerHTML = '<i class="fas fa-sync-alt me-1"></i>Refresh';
-        }, 800);
-    });
-
-
-
-    // Initialize map placeholder
-    function initializeMap() {
-        const mapElement = document.getElementById('map');
-        mapElement.style.background = 'linear-gradient(45deg, #e3f2fd 25%, transparent 25%), linear-gradient(-45deg, #e3f2fd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e3f2fd 75%), linear-gradient(-45deg, transparent 75%, #e3f2fd 75%)';
-        mapElement.style.backgroundSize = '20px 20px';
-        mapElement.style.backgroundPosition = '0 0, 0 10px, 10px -10px, -10px 0px';
-
-        // Add a centered message
-        const mapMessage = document.createElement('div');
-        mapMessage.style.cssText = `
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            color: #6c757d;
-            font-size: 1.1rem;
-            z-index: 100;
-        `;
-        mapMessage.innerHTML = `
-            <i class="fas fa-map-marked-alt fa-3x mb-3 text-primary"></i><br>
-            <strong>Live Tracking Map</strong><br>
-            <small>Driver location display</small>
-        `;
-        mapElement.appendChild(mapMessage);
-    }
-
-
-
-    // Initialize display
-    setInitialValues();
-    initializeMap();
-});
-</script>
-@endpush
-@endsection
-
-@push('scripts')
-<!-- Leaflet JS & CSS -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize map centered on [0,0] until location is fetched
-    const map = L.map('map').setView([0, 0], 15);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
-
-    // Marker for driver/user
-    const driverMarker = L.marker([0,0]).addTo(map)
-        .bindPopup('<b>Driver: You</b>').openPopup();
-
-    const infoBox = document.getElementById('driverInfo');
-
-    // Function to update marker and info box
-    function updatePosition(lat, lng) {
-        driverMarker.setLatLng([lat, lng]);
-        map.setView([lat, lng], 15);
-        infoBox.innerHTML = `Driver: You | Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`;
-    }
-
-    // Check for geolocation support
-    if (navigator.geolocation) {
-        // Watch position for real-time updates
-        navigator.geolocation.watchPosition(position => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) : 0; // m/s -> km/h
-
-            updatePosition(lat, lng);
-
-            // Update stats
-            document.getElementById('currentSpeed').textContent = speed + ' km/h';
-            document.getElementById('coordinates').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-            document.getElementById('lastUpdate').textContent = 'Just updated';
-        }, error => {
-            console.error('Geolocation error:', error);
-            alert('Unable to fetch your location. Make sure location is enabled in your browser.');
-        }, {
-            enableHighAccuracy: true,
-            maximumAge: 3000,
-            timeout: 5000
-        });
-    } else {
-        alert('Geolocation is not supported by your browser.');
-    }
-
-    // Center map button
-    document.getElementById('centerMapBtn').addEventListener('click', function() {
-        if (driverMarker.getLatLng()) {
-            map.panTo(driverMarker.getLatLng(), { animate: true });
-        }
-    });
-});
-</script>
-@endpush
+// Include the layout
+include __DIR__ . '/layouts/app.php';
+?>

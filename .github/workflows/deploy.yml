@@ -1,0 +1,32 @@
+name: Deploy Jetlouge Fleet Management to Subdomain via FTP
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - latest   # triggers deployment when pushing to latest branch
+
+jobs:
+  ftp-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Upload Fleet Management to subdomain
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /public_html/admin-logistics2/
+          protocol: ftp
+          port: 21
+          local-dir: ./       # uploads the whole repo
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.github/*
+            **/README.md
+            **/deploy.bat

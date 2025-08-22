@@ -1,11 +1,37 @@
-@extends('layouts.app')
+<?php
+$title = "Reports and Checklist";
+session_start();
+require 'db_connect.php'; // make sure this connects properly
 
-@section('content')
+if (!isset($_SESSION['driver_id'])) {
+    header("Location: index.php"); // redirect if not logged in
+    exit;
+}
+
+// Page-specific scripts
+$scripts = '
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const buttons = document.querySelectorAll(".open-report");
+    const tripField = document.getElementById("tripIdField");
+
+    buttons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tripId = btn.getAttribute("data-trip");
+        tripField.value = tripId;
+      });
+    });
+  });
+</script>';
+
+// Start capturing content
+ob_start();
+?>
 <div class="page-header-container mb-4">
   <div class="d-flex justify-content-between align-items-center page-header">
     <div class="d-flex align-items-center">
       <div class="dashboard-logo me-3">
-        <img src="{{ asset('img/jetlouge_logo.png') }}" alt="Jetlouge Travels" class="logo-img">
+        <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels" class="logo-img">
       </div>
       <div>
         <h2 class="fw-bold mb-1">Reports and Checklist</h2>
@@ -170,21 +196,9 @@
   </div>
 </div>
 
-<!-- Small script to auto-fill Trip ID -->
-@push('scripts')
-<script>
-  document.addEventListener("DOMContentLoaded", () => {
-    const buttons = document.querySelectorAll(".open-report");
-    const tripField = document.getElementById("tripIdField");
+<?php
+$content = ob_get_clean();
 
-    buttons.forEach(btn => {
-      btn.addEventListener("click", () => {
-        const tripId = btn.getAttribute("data-trip");
-        tripField.value = tripId;
-      });
-    });
-  });
-</script>
-@endpush
-
-@endsection
+// Include the layout
+include __DIR__ . '/layouts/app.php';
+?>

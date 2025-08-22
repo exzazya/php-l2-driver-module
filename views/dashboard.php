@@ -1,15 +1,52 @@
-@extends('layouts.app')
+<?php
+$title = "Driver Dashboard";
+session_start();
+require 'db_connect.php'; // make sure this connects properly
 
-@section('content')
+if (!isset($_SESSION['driver_id'])) {
+    header("Location: index.php"); // redirect if not logged in
+    exit;
+}
+
+// Get full driver profile
+$driver_id = $_SESSION['driver_id'];
+$driver = [
+    'name' => 'Driver',
+    'email' => '',
+    'license_number' => '',
+    'license_expiry' => '',
+    'phone' => '',
+    'address' => '',
+    'status' => 'active',
+    'profile_image' => '',
+    'emergency_contact' => '',
+    'emergency_phone' => ''
+];
+
+$stmt = $conn->prepare("SELECT name, email, license_number, license_expiry, phone, address, status, profile_image, emergency_contact, emergency_phone FROM drivers WHERE id = ?");
+$stmt->bind_param("i", $driver_id);
+$stmt->execute();
+$result = $stmt->get_result();
+if ($row = $result->fetch_assoc()) {
+    $driver = $row;
+}
+$stmt->close();
+
+// Start capturing content
+ob_start();
+?>
 <div class="page-header-container mb-4">
     <div class="d-flex justify-content-between align-items-center page-header">
         <div class="d-flex align-items-center">
             <div class="dashboard-logo me-3">
-                <img src="{{ asset('img/jetlouge_logo.png') }}" alt="Jetlouge Travels" class="logo-img">
+                <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels" class="logo-img">
             </div>
             <div>
                 <h2 class="fw-bold mb-1">Driver Dashboard</h2>
-                <p class="text-muted mb-0">Welcome back, John! Today is {{ date('F j, Y') }}</p>
+                <p class="text-muted mb-0">
+                    Welcome back, <?php echo htmlspecialchars($driver['name']); ?>!
+                    Today is <?php echo date('F j, Y'); ?>
+                </p>            
             </div>
         </div>
         <div class="d-flex gap-2">
@@ -23,9 +60,81 @@
     </div>
 </div>
 
+<!-- Driver Profile Card -->
+<div class="row mb-4">
+  <div class="col-lg-12">
+    <div class="card border-0 shadow-sm profile-card">
+      <div class="card-body d-flex flex-column flex-md-row align-items-center">
+        
+        <!-- Profile Image -->
+        <div class="profile-image mb-3 mb-md-0 me-md-4 text-center">
+          <img src="<?php echo !empty($driver['profile_image']) ? htmlspecialchars($driver['profile_image']) : 'img/default-avatar.png'; ?>" 
+               alt="Profile Image" 
+               class="rounded-circle border border-3 border-light shadow-sm" 
+               width="100" height="100">
+        </div>
+        
+        <!-- Profile Info -->
+        <div class="profile-info flex-grow-1 text-center text-md-start">
+          <h4 class="fw-bold mb-1">
+            <i class="fa-solid fa-user me-2 text-primary"></i>
+            <?php echo htmlspecialchars($driver['name']); ?>
+          </h4>
+          <p class="text-muted mb-3">
+            <i class="fa-solid fa-envelope me-2"></i>
+            <?php echo htmlspecialchars($driver['email']); ?>
+          </p>
+
+          <div class="row g-3 text-start">
+            <div class="col-12 col-md-4">
+              <small class="text-muted d-block">
+                <i class="fa-solid fa-id-card me-1"></i> License:
+              </small>
+              <span class="fw-semibold">
+                <?php echo htmlspecialchars($driver['license_number']); ?>
+              </span>
+              <small class="text-muted d-block">
+                (exp: <?php echo htmlspecialchars($driver['license_expiry']); ?>)
+              </small>
+            </div>
+
+            <div class="col-12 col-md-4">
+              <small class="text-muted d-block">
+                <i class="fa-solid fa-phone me-1"></i> Phone:
+              </small>
+              <span class="fw-semibold"><?php echo htmlspecialchars($driver['phone']); ?></span>
+            </div>
+
+            <div class="col-12 col-md-4">
+              <small class="text-muted d-block">
+                <i class="fa-solid fa-circle me-1"></i> Status:
+              </small>
+              <span class="badge px-3 py-2 rounded-pill bg-<?php echo $driver['status']=='active'?'success':($driver['status']=='on_trip'?'info':'secondary'); ?>">
+                <?php echo ucfirst($driver['status']); ?>
+              </span>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <small class="text-muted d-block">
+              <i class="fa-solid fa-user-shield me-1"></i> Emergency Contact:
+            </small>
+            <span class="fw-semibold">
+              <?php echo htmlspecialchars($driver['emergency_contact']); ?> 
+              (<?php echo htmlspecialchars($driver['emergency_phone']); ?>)
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
 <!-- Quick Stats Overview -->
 <div class="row mb-4">
-    <div class="col-lg-3 col-md-6 mb-3">
+    <div class="col-lg-4 col-md-6 mb-3">
         <div class="card border-0 shadow-sm stats-card h-100">
             <div class="card-body text-center">
                 <div class="stats-icon bg-primary bg-opacity-10 text-primary mb-3">
@@ -39,21 +148,7 @@
             </div>
         </div>
     </div>
-    <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card border-0 shadow-sm stats-card h-100">
-            <div class="card-body text-center">
-                <div class="stats-icon bg-success bg-opacity-10 text-success mb-3">
-                    <i class="fas fa-peso-sign"></i>
-                </div>
-                <h3 class="mb-1 text-success" id="totalEarnings">₱0</h3>
-                <small class="text-muted">Total Earnings</small>
-                <div class="mt-2">
-                    <span class="badge bg-success">+₱5,200 this month</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-3 col-md-6 mb-3">
+    <div class="col-lg-4 col-md-6 mb-3">
         <div class="card border-0 shadow-sm stats-card h-100">
             <div class="card-body text-center">
                 <div class="stats-icon bg-warning bg-opacity-10 text-warning mb-3">
@@ -73,7 +168,7 @@
             </div>
         </div>
     </div>
-    <div class="col-lg-3 col-md-6 mb-3">
+    <div class="col-lg-4 col-md-6 mb-3">
         <div class="card border-0 shadow-sm stats-card h-100">
             <div class="card-body text-center">
                 <div class="stats-icon bg-info bg-opacity-10 text-info mb-3">
@@ -117,7 +212,7 @@
                         <span class="badge bg-success">12</span>
                     </div>
                 </div>
-                <a href="{{ route('trip-assignment') }}" class="btn btn-outline-primary btn-sm w-100">
+                <a href="<?php echo route('trip-assignment'); ?>" class="btn btn-outline-primary btn-sm w-100">
                     <i class="fas fa-arrow-right me-1"></i>View Assignments
                 </a>
             </div>
@@ -149,7 +244,7 @@
                         <span class="text-muted">--</span>
                     </div>
                 </div>
-                <a href="{{ route('live-tracking') }}" class="btn btn-outline-success btn-sm w-100">
+                <a href="<?php echo route('live-tracking'); ?>" class="btn btn-outline-success btn-sm w-100">
                     <i class="fas fa-arrow-right me-1"></i>View Tracking
                 </a>
             </div>
@@ -181,7 +276,7 @@
                         <span class="text-muted">10 reports</span>
                     </div>
                 </div>
-                <a href="{{ route('reports-and-checklist') }}" class="btn btn-outline-warning btn-sm w-100">
+                <a href="<?php echo route('reports-and-checklist'); ?>" class="btn btn-outline-warning btn-sm w-100">
                     <i class="fas fa-arrow-right me-1"></i>View Reports
                 </a>
             </div>
@@ -455,7 +550,7 @@
                     </div>
                 </div>
                 <div class="text-center mt-3">
-                    <a href="{{ route('trip-assignment') }}" class="btn btn-outline-primary btn-sm">View All Trips</a>
+                    <a href="<?php echo route('trip-assignment'); ?>" class="btn btn-outline-primary btn-sm">View All Trips</a>
                 </div>
             </div>
         </div>
@@ -648,6 +743,17 @@
         font-size: 0.9rem;
     }
 }
+
+.stats-card, .module-card { transition: transform 0.2s ease, box-shadow 0.2s ease; border-radius:12px; }
+.stats-card:hover, .module-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important; }
+.profile-card { border-radius: 12px; transition: transform 0.2s ease, box-shadow 0.2s ease; margin-bottom:1.5rem; }
+.profile-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important; }
+.profile-image img { object-fit: cover; border: 3px solid #f8f9fa; }
 </style>
 
-@endsection
+<?php
+$content = ob_get_clean();
+
+// Include the layout
+include __DIR__ . '/layouts/app.php';
+?>

@@ -1,5 +1,5 @@
 <?php
-// Simple PHP Router for Jetlouge Travels Fleet Management System
+// Simple PHP Router for Jetlouge Travels Driver Module
 session_start();
 
 // Determine base path (when deployed in a subdirectory) and current route
@@ -45,22 +45,13 @@ function route($name, $params = []) {
     $routes = [
         'login' => '/',
         'dashboard' => '/dashboard',
-        'fvm.vehicles' => '/fvm/vehicles',
-        'fvm.maintenance' => '/fvm/maintenance',
-        'fvm.assignment-tracking' => '/fvm/assignment-tracking',
-        'fvm.request-new-vehicle' => '/fvm/request-new-vehicle',
-        'vrds.reservation' => '/vrds/reservation',
-        'vrds.dispatch-scheduling' => '/vrds/dispatch-scheduling',
-        'dtpm.driver-profiles' => '/dtpm/driver-profiles',
-        'dtpm.trip-reports' => '/dtpm/trip-reports',
-        'dtpm.performance' => '/dtpm/performance',
-        'tcao.fuel-and-trip-cost' => '/tcao/fuel-and-trip-cost',
-        'tcao.utilization' => '/tcao/utilization',
-        'tcao.optimization' => '/tcao/optimization',
+        'live-tracking' => '/live-tracking',
+        'trip-assignment' => '/trip-assignment',
+        'reports-and-checklist' => '/reports-and-checklist',
         'logout' => '/logout',
     ];
     
-    $path = isset($routes[$name]) ? $routes[$name] : '/';
+    $path = $routes[$name] ?? '/';
     // Use query-string routing to avoid dependency on mod_rewrite
     $qs = '/?route=' . ltrim($path, '/');
     return url($qs);
@@ -68,31 +59,27 @@ function route($name, $params = []) {
 
 // Request helper function
 function request() {
-    return new class {
+    global $route;
+    return new class($route) {
+        private $route;
+        
+        public function __construct($route) {
+            $this->route = $route;
+        }
+        
         public function routeIs($routeName) {
-            global $route;
             $routes = [
                 'dashboard' => '/dashboard',
-                'fvm.vehicles' => '/fvm/vehicles',
-                'fvm.maintenance' => '/fvm/maintenance',
-                'fvm.assignment-tracking' => '/fvm/assignment-tracking',
-                'fvm.request-new-vehicle' => '/fvm/request-new-vehicle',
-                'vrds.reservation' => '/vrds/reservation',
-                'vrds.dispatch-scheduling' => '/vrds/dispatch-scheduling',
-                'dtpm.driver-profiles' => '/dtpm/driver-profiles',
-                'dtpm.trip-reports' => '/dtpm/trip-reports',
-                'dtpm.performance' => '/dtpm/performance',
-                'tcao.fuel-and-trip-cost' => '/tcao/fuel-and-trip-cost',
-                'tcao.utilization' => '/tcao/utilization',
-                'tcao.optimization' => '/tcao/optimization',
+                'live-tracking' => '/live-tracking',
+                'trip-assignment' => '/trip-assignment',
+                'reports-and-checklist' => '/reports-and-checklist',
             ];
             
-            return isset($routes[$routeName]) && $routes[$routeName] === $route;
+            return isset($routes[$routeName]) && $routes[$routeName] === $this->route;
         }
         
         public function is($pattern) {
-            global $route;
-            return fnmatch($pattern, $route);
+            return fnmatch($pattern, $this->route);
         }
     };
 }
@@ -122,83 +109,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $route === '/') {
 // Simple routing
 switch ($route) {
     case '/':
-        // If already logged in, show dashboard directly (works even without mod_rewrite)
         require_once 'includes/auth.php';
         if (isLoggedIn()) {
-            include 'views/dashboard.php';
-        } else {
-            include 'views/login.php';
+            header('Location: ' . route('dashboard'));
+            exit();
         }
+        include 'views/login.php';
         break;
+        
     case '/dashboard':
         require_once 'includes/auth.php';
         requireLogin();
         include 'views/dashboard.php';
         break;
-    case '/fvm/vehicles':
+        
+    case '/live-tracking':
         require_once 'includes/auth.php';
         requireLogin();
-        include 'views/fvm/vehicles.php';
+        include 'views/live-tracking.php';
         break;
-    case '/fvm/maintenance':
+
+    case '/trip-assignment':
         require_once 'includes/auth.php';
         requireLogin();
-        include 'views/fvm/maintenance.php';
+        include 'views/trip-assignment.php';
         break;
-    case '/fvm/assignment-tracking':
+
+    case '/reports-and-checklist':
         require_once 'includes/auth.php';
         requireLogin();
-        include 'views/fvm/assignment-tracking.php';
+        include 'views/reports-and-checklist.php';
         break;
-    case '/fvm/request-new-vehicle':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/fvm/request-new-vehicle.php';
-        break;
-    case '/vrds/reservation':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/vrds/reservation.php';
-        break;
-    case '/vrds/dispatch-scheduling':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/vrds/dispatch-scheduling.php';
-        break;
-    case '/dtpm/driver-profiles':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/dtpm/driver-profiles.php';
-        break;
-    case '/dtpm/trip-reports':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/dtpm/trip-reports.php';
-        break;
-    case '/dtpm/performance':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/dtpm/performance.php';
-        break;
-    case '/tcao/fuel-and-trip-cost':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/tcao/fuel-and-trip-cost.php';
-        break;
-    case '/tcao/utilization':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/tcao/utilization.php';
-        break;
-    case '/tcao/optimization':
-        require_once 'includes/auth.php';
-        requireLogin();
-        include 'views/tcao/optimization.php';
-        break;
+        
     case '/logout':
         require_once 'includes/auth.php';
         logout();
         break;
+        
     default:
         http_response_code(404);
         echo '<h1>404 - Page Not Found</h1>';

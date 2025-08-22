@@ -1,11 +1,11 @@
 <?php
-// Authentication functions for Jetlouge Travels Fleet Management
+// Authentication functions for Jetlouge Travels Driver Module (Driver-only login)
 require_once 'database.php';
 session_start();
 
 function isLoggedIn() {
-    return (isset($_SESSION['admin_id']) && !empty($_SESSION['admin_id'])) || 
-           (isset($_SESSION['driver_id']) && !empty($_SESSION['driver_id']));
+    // Driver-only session
+    return (isset($_SESSION['driver_id']) && !empty($_SESSION['driver_id']));
 }
 
 function requireLogin() {
@@ -18,44 +18,27 @@ function requireLogin() {
 }
 
 function login($identifier, $password) {
-    // Get user (admin or driver) from database
-    $user = getUserByCredentials($identifier);
+    // Driver-only authentication by email
+    $driver = getDriverByEmail($identifier);
     
-    if ($user && password_verify($password, $user['password_hash'])) {
-        if ($user['user_type'] === 'admin') {
-            // Set admin session variables
-            $_SESSION['user_type'] = 'admin';
-            $_SESSION['admin_id'] = $user['id'];
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['full_name'] = $user['full_name'];
-            $_SESSION['role'] = $user['role'];
-            $_SESSION['email'] = $user['email'];
-            
-            // Update last login for admin
-            updateLastLogin($user['id']);
-        } else {
-            // Set driver session variables
-            $_SESSION['user_type'] = 'driver';
-            $_SESSION['driver_id'] = $user['id'];
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['username'] = $user['email']; // Use email as username for drivers
-            $_SESSION['full_name'] = $user['name'];
-            $_SESSION['role'] = 'driver';
-            $_SESSION['email'] = $user['email'];
-            $_SESSION['license_number'] = $user['license_number'];
-            
-            // Update last login for driver (you can add this function later)
-            // updateDriverLastLogin($user['id']);
-        }
+    if ($driver && password_verify($password, $driver['password_hash'])) {
+        // Set driver session variables
+        $_SESSION['user_type'] = 'driver';
+        $_SESSION['driver_id'] = $driver['id'];
+        $_SESSION['user_id'] = $driver['id'];
+        $_SESSION['username'] = $driver['email']; // Use email as username for drivers
+        $_SESSION['full_name'] = $driver['name'] ?? '';
+        $_SESSION['role'] = 'driver';
+        $_SESSION['email'] = $driver['email'];
+        $_SESSION['license_number'] = $driver['license_number'] ?? '';
         
         return true;
     }
     // Server-side diagnostics (do not expose sensitive info to users)
-    if (!$user) {
-        error_log('[AUTH] Login failed: user not found for identifier=' . (string)$identifier);
+    if (!$driver) {
+        error_log('[AUTH] Login failed (driver-only): driver not found for email=' . (string)$identifier);
     } else {
-        error_log('[AUTH] Login failed: password mismatch for user_type=' . $user['user_type'] . ' id=' . $user['id']);
+        error_log('[AUTH] Login failed (driver-only): password mismatch for driver id=' . $driver['id']);
     }
     
     return false;
