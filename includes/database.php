@@ -117,3 +117,21 @@ function validateApiToken($token) {
     return $stmt ? $stmt->fetch() : false;
 }
 
+// ==============================
+// Driver password management
+// ==============================
+
+function updateDriverPasswordHash($driverId, $newHash) {
+    return executeQuery("UPDATE drivers SET password_hash = ? WHERE id = ?", [$newHash, $driverId]);
+}
+
+function setDriverPasswordByEmail($email, $plainPassword) {
+    $hash = password_hash($plainPassword, PASSWORD_DEFAULT);
+    return executeQuery("UPDATE drivers SET password_hash = ? WHERE email = ?", [$hash, $email]);
+}
+
+function setDriverPasswordById($driverId, $plainPassword) {
+    $hash = password_hash($plainPassword, PASSWORD_DEFAULT);
+    return updateDriverPasswordHash($driverId, $hash);
+}
+

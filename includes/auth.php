@@ -3,6 +3,20 @@
 require_once 'database.php';
 session_start();
 
+// Provide getallheaders() for non-Apache environments (e.g., some Windows/IIS setups)
+if (!function_exists('getallheaders')) {
+    function getallheaders() {
+        $headers = [];
+        foreach ($_SERVER as $name => $value) {
+            if (strpos($name, 'HTTP_') === 0) {
+                $key = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($name, 5)))));
+                $headers[$key] = $value;
+            }
+        }
+        return $headers;
+    }
+}
+
 function isLoggedIn() {
     // Driver-only session
     return (isset($_SESSION['driver_id']) && !empty($_SESSION['driver_id']));
@@ -21,7 +35,7 @@ function login($identifier, $password) {
     // Driver-only authentication by email
     $driver = getDriverByEmail($identifier);
     
-    if ($driver && password_verify($password, $driver['password_hash'])) {
+    if ($driver && passwordMatches($driver, $password, true)) {
         // Set driver session variables
         $_SESSION['user_type'] = 'driver';
         $_SESSION['driver_id'] = $driver['id'];
@@ -42,6 +56,56 @@ function login($identifier, $password) {
     }
     
     return false;
+}
+
+// Check password against stored hash. Supports bcrypt/argon via password_verify and
+// legacy SHA2 (sha256/sha512) hex strings from manual inserts. If $migrate is true
+// and a legacy hash matches, it will be upgraded to password_hash() securely.
+function passwordMatches($driver, $password, $migrate = false) {
+    if (!isset($driver['password_hash'])) return false;
+    $stored = (string)$driver['password_hash'];
+    // Modern hashed password (bcrypt/argon prefixed with $)
+    if (strlen($stored) > 0 && $stored[0] === '$') {
+        return password_verify($password, $stored);
+    }
+    // Legacy hashes: handle hex and binary for SHA-256/SHA-512, and optionally SHA1/MD5
+    $ok = false;
+    $len = strlen($stored);
+    $isHex = ctype_xdigit($stored);
+    // SHA-256
+    if ($isHex && $len === 64) { // sha256 hex
+        $ok = hash_equals(strtolower($stored), hash('sha256', $password));
+    } elseif (!$isHex && $len === 32) { // sha256 binary (32 bytes)
+        $ok = hash_equals($stored, hash('sha256', $password, true));
+    }
+    // SHA-512
+    elseif ($isHex && $len === 128) { // sha512 hex
+        $ok = hash_equals(strtolower($stored), hash('sha512', $password));
+    } elseif (!$isHex && $len === 64) { // sha512 binary (64 bytes)
+        $ok = hash_equals($stored, hash('sha512', $password, true));
+    }
+    // SHA1 (less likely, but support just in case)
+    elseif ($isHex && $len === 40) { // sha1 hex
+        $ok = hash_equals(strtolower($stored), sha1($password));
+    } elseif (!$isHex && $len === 20) { // sha1 binary
+        $ok = hash_equals($stored, sha1($password, true));
+    }
+    // MD5 (not recommended, but handle if encountered)
+    elseif ($isHex && $len === 32) { // md5 hex
+        $ok = hash_equals(strtolower($stored), md5($password));
+    } elseif (!$isHex && $len === 16) { // md5 binary
+        $ok = hash_equals($stored, md5($password, true));
+    }
+    // If matched and migration requested, upgrade to password_hash
+    if ($ok && $migrate) {
+        $newHash = password_hash($password, PASSWORD_DEFAULT);
+        try {
+            updateDriverPasswordHash($driver['id'], $newHash);
+        } catch (Exception $e) {
+            // Non-fatal: keep using legacy until next login
+        }
+    }
+    return $ok;
 }
 
 function logout() {

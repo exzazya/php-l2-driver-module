@@ -4,7 +4,7 @@
 -- Create database (run this first if database doesn't exist)
 -- CREATE DATABASE logi_L2 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-USE logi_L2;fleet;
+USE logi_L2;
 
 -- ============================================
 -- AUTHENTICATION & USER MANAGEMENT
@@ -25,8 +25,6 @@ CREATE TABLE IF NOT EXISTS admins (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-
-
 -- (Removed legacy users table; system now uses admins for requester/approver roles)
 
 -- API tokens table for authentication
@@ -39,8 +37,6 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
 );
 
-
-
 -- Sessions table for web login tracking
 CREATE TABLE IF NOT EXISTS admin_sessions (
     id VARCHAR(128) PRIMARY KEY,
@@ -50,8 +46,6 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
     last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
 );
-
-
 
 -- ============================================
 -- FLEET AND VEHICLE MANAGEMENT (FVM)
@@ -75,7 +69,7 @@ CREATE TABLE IF NOT EXISTS vehicles (
     fuel_type ENUM('gasoline', 'diesel', 'hybrid', 'electric') NOT NULL,
     
     -- Status and Operational Data
-    status ENUM('active', 'maintenance', 'inactive', 'on trip') NOT NULL DEFAULT 'active',
+    status ENUM('active', 'maintenance', 'inactive', 'on_trip', 'on trip') NOT NULL DEFAULT 'active',
     current_mileage INT DEFAULT 0,
     total_kilometers INT DEFAULT 0,
     
@@ -89,8 +83,6 @@ CREATE TABLE IF NOT EXISTS vehicles (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
-
-
 
 -- Vehicle Requests table - for requesting new vehicles
 CREATE TABLE IF NOT EXISTS vehicle_requests (
@@ -109,8 +101,6 @@ CREATE TABLE IF NOT EXISTS vehicle_requests (
     FOREIGN KEY (requester_id) REFERENCES admins(id),
     FOREIGN KEY (reviewed_by) REFERENCES admins(id)
 );
-
-
 
 -- Maintenance Records table
 CREATE TABLE IF NOT EXISTS maintenance_records (
@@ -169,6 +159,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NULL,
     license_number VARCHAR(50) UNIQUE NOT NULL,
     license_expiry DATE NOT NULL,
     phone VARCHAR(20),
@@ -254,7 +245,7 @@ CREATE TABLE IF NOT EXISTS trips (
     destination_lng DECIMAL(10, 6),
     start_datetime DATETIME,
     end_datetime DATETIME,
-    status ENUM('scheduled', 'in_progress', 'completed', 'cancelled') DEFAULT 'scheduled',
+    status ENUM('requested', 'assigned', 'accepted', 'en_route', 'arrived', 'completed', 'declined', 'cancelled', 'scheduled', 'in_progress') DEFAULT 'scheduled',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (reservation_id) REFERENCES reservations(id),
@@ -287,8 +278,49 @@ CREATE TABLE IF NOT EXISTS mobile_assignments (
     assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     viewed_at DATETIME NULL,
     accepted_at DATETIME NULL,
+    -- Decline support
+    is_declined BOOLEAN DEFAULT FALSE,
+    declined_at DATETIME NULL,
+    decline_reason VARCHAR(255) NULL,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+);
+
+-- ============================================
+-- TELEMETRY & AUDITING (for live tracking and compliance)
+-- ============================================
+
+-- Driver GPS locations captured on device and uploaded in near real-time
+CREATE TABLE IF NOT EXISTS driver_locations (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    driver_id INT NOT NULL,
+    trip_id INT NULL,
+    lat DECIMAL(9,6) NOT NULL,
+    lng DECIMAL(9,6) NOT NULL,
+    speed DECIMAL(6,2) NULL,
+    heading DECIMAL(6,2) NULL,
+    accuracy DECIMAL(6,2) NULL,
+    captured_at DATETIME NOT NULL,
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    source ENUM('web','android','ios','other') DEFAULT 'web',
+    FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+    FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL,
+    INDEX idx_driver_trip_time (driver_id, trip_id, captured_at),
+    INDEX idx_lat_lng (lat, lng)
+);
+
+-- Audit log for key actions (assignment, accept/decline, status transitions)
+CREATE TABLE IF NOT EXISTS audits (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    actor_type ENUM('admin','driver','system') NOT NULL,
+    actor_id INT NULL,
+    action VARCHAR(100) NOT NULL,
+    entity_type ENUM('trip','vehicle','driver','assignment','reservation','system') NOT NULL,
+    entity_id INT NULL,
+    metadata_json JSON NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_actor (actor_type, actor_id),
+    INDEX idx_entity (entity_type, entity_id)
 );
 
 -- ============================================
