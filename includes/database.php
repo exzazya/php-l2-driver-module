@@ -67,7 +67,10 @@ function getAdminByUsername($username) {
 }
 
 function getDriverByEmail($email) {
-    $stmt = executeQuery("SELECT * FROM drivers WHERE email = ? AND status = 'active' AND password_hash IS NOT NULL", [$email]);
+    $stmt = executeQuery(
+        "SELECT * FROM drivers WHERE email = ? AND status IN ('active','on_trip') AND password_hash IS NOT NULL",
+        [$email]
+    );
     return $stmt ? $stmt->fetch() : false;
 }
 

@@ -1,7 +1,6 @@
 <?php
 $title = "Trip Assignment";
 session_start();
-require 'db_connect.php'; // make sure this connects properly
 
 if (!isset($_SESSION['driver_id'])) {
     header("Location: index.php"); // redirect if not logged in

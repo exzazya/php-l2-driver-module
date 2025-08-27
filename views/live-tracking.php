@@ -1,95 +1,414 @@
 <?php
 $title = "Live Tracking";
-session_start();
-require 'db_connect.php'; // make sure this connects properly
-
-if (!isset($_SESSION['driver_id'])) {
-    header("Location: index.php"); // redirect if not logged in
-    exit;
-}
 
 // Page-specific styles - Leaflet CSS
-$styles = '<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />';
+$styles = '<link rel="stylesheet" href="' . asset('vendor/leaflet/leaflet.css') . '">'
+        . "\n<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet/dist/leaflet.css\" media=\"print\" onload=\"this.media='all'\">";
 
 // Page-specific scripts - Leaflet JS and tracking scripts
-$scripts = '
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+$leafletTag = '<script src="' . asset('vendor/leaflet/leaflet.js') . '"></script>';
+$cdnFallback = '<script>if(!window.L){var s=document.createElement("script");s.src="https://unpkg.com/leaflet/dist/leaflet.js";document.head.appendChild(s);}</script>';
+$trackingJs = <<<'JS'
 <script>
 document.addEventListener("DOMContentLoaded", function() {
-    // Set initial display values
-    function setInitialValues() {
-        document.getElementById("lastUpdate").textContent = "Waiting for data...";
-    }
+  const qs = new URLSearchParams(window.location.search);
+  const tripIdParam = qs.get("trip_id");
 
-    // Button event listeners
-    document.getElementById("centerMapBtn").addEventListener("click", function() {
-        this.innerHTML = "<i class=\"fas fa-spinner fa-spin me-1\"></i>Centering...";
-        setTimeout(() => {
-            this.innerHTML = "<i class=\"fas fa-crosshairs me-1\"></i>Center Map";
-        }, 1000);
-    });
+  // UI refs
+  const lastUpdateEl = document.getElementById("lastUpdate");
+  const speedEl = document.getElementById("currentSpeed");
+  const fromTitleEl = document.getElementById("fromTitle");
+  const fromAddrEl = document.getElementById("fromAddress");
+  const toTitleEl = document.getElementById("toTitle");
+  const toAddrEl = document.getElementById("toAddress");
+  const vehicleModelEl = document.getElementById("vehicleModel");
+  const vehiclePlateEl = document.getElementById("vehiclePlate");
+  const vehicleCapacityEl = document.getElementById("vehicleCapacity");
 
-    document.getElementById("refreshBtn").addEventListener("click", function() {
-        this.innerHTML = "<i class=\"fas fa-spinner fa-spin me-1\"></i>Refreshing...";
-        setTimeout(() => {
-            this.innerHTML = "<i class=\"fas fa-sync-alt me-1\"></i>Refresh";
-        }, 800);
-    });
+  // Map
+  const map = L.map("map").setView([0, 0], 15);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+  // Ensure proper sizing when embedded in cards/columns
+  setTimeout(() => map.invalidateSize(), 0);
+  window.addEventListener('resize', () => { try { map.invalidateSize(); } catch(_){} });
+  const driverMarker = L.marker([0,0]).addTo(map).bindPopup("<b>Driver: You</b>");
+  let startMarker = null, destMarker = null, routeLine = null;
+  let trailLine = null; // breadcrumb of uploaded GPS points
+  let trailCoords = [];
+  let firstTrailRender = true;
+  let geoHasFix = false;
+  let firstGeoCenter = true;
+  let firstViewDone = false;
+  let pickedUp = false;
 
-    // Initialize map centered on [0,0] until location is fetched
-    const map = L.map("map").setView([0, 0], 15);
+  // State
+  let activeTrip = null;
+  let pendingPoints = [];
+  let lastUploadAt = 0;
+  const uploadIntervalMs = 10000;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "© OpenStreetMap"
-    }).addTo(map);
+  init();
 
-    // Marker for driver/user
-    const driverMarker = L.marker([0,0]).addTo(map)
-        .bindPopup("<b>Driver: You</b>").openPopup();
+  async function init() {
+    lastUpdateEl.textContent = "Waiting for data...";
+    await loadActiveTrip();
+    wireButtons();
+    startGeolocation();
+    startPollingTrail();
+  }
 
-    // Function to update marker and info box
-    function updatePosition(lat, lng) {
-        driverMarker.setLatLng([lat, lng]);
-        map.setView([lat, lng], 15);
-    }
-
-    // Check for geolocation support
-    if (navigator.geolocation) {
-        // Watch position for real-time updates
-        navigator.geolocation.watchPosition(position => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) : 0; // m/s -> km/h
-
-            updatePosition(lat, lng);
-
-            // Update stats
-            document.getElementById("currentSpeed").textContent = speed + " km/h";
-            document.getElementById("lastUpdate").textContent = "Just updated";
-        }, error => {
-            console.error("Geolocation error:", error);
-            alert("Unable to fetch your location. Make sure location is enabled in your browser.");
-        }, {
-            enableHighAccuracy: true,
-            maximumAge: 3000,
-            timeout: 5000
+  function onPickUp() {
+    if (!activeTrip) return;
+    pickedUp = true;
+    // Hide start marker
+    if (startMarker) { try { map.removeLayer(startMarker); } catch(_){} startMarker = null; }
+    // Remove previous route and rebuild from driver to destination
+    if (routeLine) { try { map.removeLayer(routeLine); } catch(_){} routeLine = null; }
+    if (destMarker) {
+      const cur = driverMarker.getLatLng();
+      const d = destMarker.getLatLng();
+      if (cur && d) {
+        drawRoadRoute([cur.lat, cur.lng], [d.lat, d.lng]).catch(() => {
+          routeLine = L.polyline([[cur.lat, cur.lng], [d.lat, d.lng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
         });
+      }
+    }
+    // Optionally, update UI labels
+    const fromTitle = document.getElementById('fromTitle');
+    if (fromTitle) fromTitle.textContent = 'Picked Up';
+    const fromAddr = document.getElementById('fromAddress');
+    if (fromAddr) fromAddr.textContent = new Date().toLocaleString();
+    updatePickupButtonState();
+  }
+
+  // Draw road-snapped route using OSRM demo server (no API key). Fallback handled by caller.
+  async function drawRoadRoute(start, dest) {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      const data = await res.json();
+      if (!res.ok || !data || !data.routes || !data.routes[0]) throw new Error('No route');
+      const coords = data.routes[0].geometry.coordinates; // [lng, lat]
+      const latlngs = coords.map(c => [c[1], c[0]]);
+      routeLine = L.polyline(latlngs, { color: 'blue', weight: 4, opacity: 0.8 }).addTo(map);
+      if (!firstViewDone) {
+        map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+        firstViewDone = true;
+      }
+    } catch (e) {
+      console.warn('OSRM route failed', e);
+      throw e;
+    }
+  }
+
+  function wireButtons() {
+    document.getElementById("centerMapBtn").addEventListener("click", function() {
+      if (driverMarker.getLatLng()) map.panTo(driverMarker.getLatLng(), { animate: true });
+    });
+    document.getElementById("refreshBtn").addEventListener("click", function() {
+      loadActiveTrip();
+    });
+    const pu = document.getElementById('pickupBtn');
+    if (pu) pu.addEventListener('click', onPickUp);
+    updatePickupButtonState();
+  }
+
+  async function loadActiveTrip() {
+    try {
+      let trip = null;
+      const accepted = await fetchAssignments('accepted');
+      if (tripIdParam) {
+        trip = accepted.find(t => String(t.trip_id || t.id) === String(tripIdParam)) || null;
+      } else {
+        trip = accepted[0] || null;
+      }
+      if (!trip) {
+        fromTitleEl.textContent = 'No active trip';
+        fromAddrEl.textContent = '--';
+        toTitleEl.textContent = 'No destination';
+        toAddrEl.textContent = '--';
+        return;
+      }
+      activeTrip = trip;
+      // If trip is already ongoing, treat as picked up
+      const st = String(trip.status || '').toLowerCase();
+      pickedUp = (st === 'in_progress' || st === 'en_route');
+      updateTripInfo(trip);
+      renderRoute(trip);
+      updatePickupButtonState();
+    } catch (e) {
+      console.error('Failed loading active trip', e);
+    }
+  }
+
+  function updatePickupButtonState() {
+    const pu = document.getElementById('pickupBtn');
+    if (!pu) return;
+    const hasTrip = !!activeTrip;
+    if (!hasTrip || pickedUp) {
+      pu.style.display = 'none';
     } else {
-        alert("Geolocation is not supported by your browser.");
+      pu.style.display = '';
+      pu.disabled = false;
+      pu.textContent = 'Pick Up';
+    }
+  }
+
+  async function fetchAssignments(status) {
+    const res = await fetch(`api/assignments.php?status=${encodeURIComponent(status)}`, { credentials: 'same-origin' });
+    const data = await res.json();
+    if (!res.ok || data?.success === false) return [];
+    return Array.isArray(data?.data?.assignments) ? data.data.assignments : [];
+  }
+
+  function updateTripInfo(t) {
+    const from = t.start_location || 'Unknown';
+    const to = t.destination || 'Unknown';
+    fromTitleEl.textContent = from;
+    fromAddrEl.textContent = t.pickup_time ? new Date(t.pickup_time).toLocaleString() : '--';
+    toTitleEl.textContent = to;
+    toAddrEl.textContent = t.dropoff_time ? new Date(t.dropoff_time).toLocaleString() : '--';
+
+    if (vehicleModelEl) vehicleModelEl.textContent = t.vehicle_model || t.vehicle_name || '--';
+    if (vehiclePlateEl) vehiclePlateEl.textContent = t.plate_number || '--';
+    if (vehicleCapacityEl) vehicleCapacityEl.textContent = t.capacity || '--';
+  }
+
+  function renderRoute(t) {
+    const slat = parseFloat(t.start_lat || t.startLatitude || t.start_latitude);
+    const slng = parseFloat(t.start_lng || t.startLongitude || t.start_longitude);
+    const dlat = parseFloat(t.destination_lat || t.dest_lat || t.destinationLatitude);
+    const dlng = parseFloat(t.destination_lng || t.dest_lng || t.destinationLongitude);
+
+    // Clear previous
+    if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+    if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+    if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+
+    const hasStart = Number.isFinite(slat) && Number.isFinite(slng);
+    const hasDest = Number.isFinite(dlat) && Number.isFinite(dlng);
+
+    if (hasStart && !pickedUp) startMarker = L.marker([slat, slng], { title: 'Start' }).addTo(map);
+    if (hasDest) destMarker = L.marker([dlat, dlng], { title: 'Destination' }).addTo(map);
+    if (!pickedUp && hasStart && hasDest) {
+      // Try road-snapped route via OSRM; fallback to straight line if it fails
+      drawRoadRoute([slat, slng], [dlat, dlng])
+        .catch(() => {
+          routeLine = L.polyline([[slat, slng], [dlat, dlng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
+          if (!firstViewDone) {
+            map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+            firstViewDone = true;
+          }
+        });
+    } else if (!pickedUp && hasStart && !firstViewDone) {
+      // Center on start if only start is known
+      map.setView([slat, slng], 16);
+      firstViewDone = true;
+    } else if (pickedUp && hasDest) {
+      // If picked up, route from current driver location to destination
+      const cur = driverMarker.getLatLng();
+      if (cur && Number.isFinite(cur.lat) && Number.isFinite(cur.lng)) {
+        drawRoadRoute([cur.lat, cur.lng], [dlat, dlng])
+          .catch(() => {
+            routeLine = L.polyline([[cur.lat, cur.lng], [dlat, dlng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
+            if (!firstViewDone) {
+              map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+              firstViewDone = true;
+            }
+          });
+      }
+    }
+  }
+
+  function startGeolocation() {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser.');
+      return;
+    }
+    navigator.geolocation.watchPosition(onPosition, onGeoError, {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 8000
+    });
+  }
+
+  function onPosition(position) {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const speedKmh = position.coords.speed ? (position.coords.speed * 3.6) : 0;
+    const heading = position.coords.heading ?? null;
+    const accuracy = position.coords.accuracy ?? null;
+    const recorded_at = new Date().toISOString();
+
+    driverMarker.setLatLng([lat, lng]);
+    geoHasFix = true;
+    // Only center on geolocation if we haven't shown a route-centered view yet
+    if (firstGeoCenter && !firstViewDone) {
+      map.setView([lat, lng], 17);
+      firstGeoCenter = false;
+      firstViewDone = true;
     }
 
-    // Center map button
-    document.getElementById("centerMapBtn").addEventListener("click", function() {
-        if (driverMarker.getLatLng()) {
-            map.panTo(driverMarker.getLatLng(), { animate: true });
-        }
-    });
+    // If already picked up and we have a destination, refresh route from current position
+    if (pickedUp && destMarker) {
+      if (routeLine) { try { map.removeLayer(routeLine); } catch(_){} routeLine = null; }
+      const d = destMarker.getLatLng();
+      drawRoadRoute([lat, lng], [d.lat, d.lng]).catch(() => {
+        routeLine = L.polyline([[lat, lng], [d.lat, d.lng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
+      });
+    }
+    if (speedEl) speedEl.textContent = `${(speedKmh || 0).toFixed(1)} km/h`;
+    if (lastUpdateEl) lastUpdateEl.textContent = 'Just updated';
 
-    // Initialize display
-    setInitialValues();
+    // Queue point
+    if (activeTrip && (activeTrip.trip_id || activeTrip.id)) {
+      // Use 'recorded_at' to match API contract
+      pendingPoints.push({ lat, lng, speed: speedKmh, heading, accuracy, recorded_at });
+      maybeUpload();
+    }
+  }
+
+  function onGeoError(error) {
+    console.error('Geolocation error:', error);
+    alert('Unable to fetch your location. Make sure location is enabled in your browser.');
+  }
+
+  async function maybeUpload() {
+    const now = Date.now();
+    if (now - lastUploadAt < uploadIntervalMs) return;
+    if (!pendingPoints.length) return;
+    lastUploadAt = now;
+    const points = pendingPoints.slice();
+    pendingPoints = [];
+    try {
+      const tripId = activeTrip.trip_id || activeTrip.id;
+      const res = await fetch('api/locations.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ trip_id: tripId, points })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        console.warn('Upload failed', data?.message);
+      }
+    } catch (e) {
+      console.error('Upload error', e);
+    }
+  }
+
+  // Polling for recent GPS points and render breadcrumb trail
+  let trailTimer = null;
+
+  function startPollingTrail() {
+    if (trailTimer) clearInterval(trailTimer);
+    pollTrailOnce();
+    trailTimer = setInterval(pollTrailOnce, 5000);
+  }
+
+  async function pollTrailOnce() {
+    if (!activeTrip || !(activeTrip.trip_id || activeTrip.id)) return;
+    const tripId = activeTrip.trip_id || activeTrip.id;
+    try {
+      const res = await fetch(`api/locations.php?trip_id=${encodeURIComponent(tripId)}&limit=500`, { credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) return;
+      const locs = Array.isArray(data?.data?.locations) ? data.data.locations : [];
+      if (!locs.length) return;
+
+      // Sort ascending by captured_at then id for a forward path
+      locs.sort((a,b) => {
+        const ta = new Date(a.captured_at).getTime() || 0;
+        const tb = new Date(b.captured_at).getTime() || 0;
+        if (ta !== tb) return ta - tb;
+        return (a.id || 0) - (b.id || 0);
+      });
+
+      trailCoords = locs
+        .map(r => [parseFloat(r.lat), parseFloat(r.lng)])
+        .filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (!trailCoords.length) return;
+
+      if (!trailLine) {
+        trailLine = L.polyline(trailCoords, { color: '#ff5722', weight: 4, opacity: 0.85 }).addTo(map);
+      } else {
+        trailLine.setLatLngs(trailCoords);
+      }
+
+      const last = trailCoords[trailCoords.length - 1];
+      if (last) {
+        if (firstTrailRender && !firstViewDone) {
+          map.fitBounds(trailLine.getBounds(), { padding: [30, 30] });
+          firstViewDone = true;
+        }
+        const cur = driverMarker.getLatLng();
+        if (!cur || (!cur.lat && !cur.lng)) {
+          driverMarker.setLatLng(last);
+        }
+        if (lastUpdateEl) {
+          const lastCap = locs[locs.length - 1]?.captured_at;
+          if (lastCap) {
+            const dt = new Date(lastCap);
+            lastUpdateEl.textContent = `Updated ${isNaN(dt) ? 'recently' : timeAgo(dt)}`;
+          } else {
+            lastUpdateEl.textContent = 'Updated just now';
+          }
+        }
+
+        // Update distance traveled (km)
+        const distEl = document.getElementById('distanceTraveled');
+        if (distEl) {
+          const km = computePathDistanceKm(trailCoords);
+          distEl.textContent = `${km.toFixed(2)} km`;
+        }
+      }
+      firstTrailRender = false;
+    } catch (e) {
+      console.warn('Trail polling error', e);
+    }
+  }
+
+  function computePathDistanceKm(coords) {
+    let d = 0;
+    for (let i = 1; i < coords.length; i++) {
+      d += haversineKm(coords[i - 1], coords[i]);
+    }
+    return d;
+  }
+
+  function haversineKm(a, b) {
+    const R = 6371; // km
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(b[0] - a[0]);
+    const dLng = toRad(b[1] - a[1]);
+    const lat1 = toRad(a[0]);
+    const lat2 = toRad(b[0]);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+
+  function timeAgo(d) {
+    const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (seconds < 5) return 'just now';
+    const units = [
+      ['day', 86400],
+      ['hour', 3600],
+      ['minute', 60],
+      ['second', 1],
+    ];
+    for (const [name, s] of units) {
+      if (seconds >= s) {
+        const val = Math.floor(seconds / s);
+        return `${val} ${name}${val !== 1 ? 's' : ''} ago`;
+      }
+    }
+    return 'just now';
+  }
+
 });
-</script>';
+</script>
+JS;
+$scripts = $leafletTag . "\n" . $cdnFallback . "\n" . $trackingJs;
 
 // Start capturing content
 ob_start();
@@ -106,6 +425,9 @@ ob_start();
             </div>
         </div>
         <div class="d-flex gap-2">
+            <button class="btn btn-warning btn-sm" id="pickupBtn">
+                <i class="fas fa-user-check me-1"></i>Pick Up
+            </button>
             <button class="btn btn-outline-primary btn-sm" id="centerMapBtn">
                 <i class="fas fa-crosshairs me-1"></i>Center Map
             </button>
@@ -176,8 +498,6 @@ ob_start();
             </div>
             <div class="card-body p-0" style="height: 500px; position: relative;">
                 <div id="map" style="height: 100%; width: 100%;"></div>
-
-
             </div>
         </div>
     </div>
@@ -198,8 +518,8 @@ ob_start();
                             <i class="fas fa-play-circle text-muted me-2"></i>
                             <small class="text-muted">FROM</small>
                         </div>
-                        <div class="fw-bold text-muted">No active trip</div>
-                        <small class="text-muted">--</small>
+                        <div id="fromTitle" class="fw-bold text-muted">No active trip</div>
+                        <small id="fromAddress" class="text-muted">--</small>
                     </div>
 
                     <div class="route-line"></div>
@@ -209,8 +529,8 @@ ob_start();
                             <i class="fas fa-map-pin text-muted me-2"></i>
                             <small class="text-muted">TO</small>
                         </div>
-                        <div class="fw-bold text-muted">No destination</div>
-                        <small class="text-muted">--</small>
+                        <div id="toTitle" class="fw-bold text-muted">No destination</div>
+                        <small id="toAddress" class="text-muted">--</small>
                     </div>
                 </div>
 
@@ -222,15 +542,15 @@ ob_start();
                     </h6>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Model:</span>
-                        <span class="fw-bold text-muted">--</span>
+                        <span id="vehicleModel" class="fw-bold text-muted">--</span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span>Plate:</span>
-                        <span class="fw-bold text-muted">--</span>
+                        <span id="vehiclePlate" class="fw-bold text-muted">--</span>
                     </div>
                     <div class="d-flex justify-content-between">
                         <span>Capacity:</span>
-                        <span class="fw-bold text-muted">--</span>
+                        <span id="vehicleCapacity" class="fw-bold text-muted">--</span>
                     </div>
                 </div>
             </div>

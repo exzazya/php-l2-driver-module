@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/x-icon" href="<?php echo asset('img/jetlouge_logo.png'); ?>">
+  <link rel="icon" type="image/x-icon" href="<?php echo asset('../img/jetlouge_logo.png'); ?>">
   <title>Jetlouge Travels - <?php echo $title ?? 'Driver Dashboard'; ?></title>
 
   <!-- Bootstrap CSS -->
@@ -19,6 +19,7 @@
 
   <!-- Page-specific styles -->
   <?php echo $styles ?? ''; ?>
+  
 </head>
 
 <body style="background-color: #f8f9fa !important;">
@@ -50,22 +51,22 @@
       $driverEmail = $_SESSION['email'] ?? '';
       $driverImg = 'img/default-profile.jpg'; // default image
 
-      if ($driver_id && $conn) {
-          // Fetch the driver's profile image from database
-          $stmt = $conn->prepare("SELECT profile_image FROM drivers WHERE id = ?");
-          $stmt->bind_param("i", $driver_id);
-          $stmt->execute();
-          $stmt->store_result();
-          
-          if ($stmt->num_rows > 0) {
-              $stmt->bind_result($profileImage);
-              $stmt->fetch();
-              if (!empty($profileImage)) {
-                  // Use the uploaded image
-                  $driverImg = htmlspecialchars($profileImage);
+      if ($driver_id && isset($conn) && is_object($conn) && method_exists($conn, 'prepare')) {
+          // Fetch the driver's profile image from database (mysqli-like)
+          if ($stmt = $conn->prepare("SELECT profile_image FROM drivers WHERE id = ?")) {
+              $stmt->bind_param("i", $driver_id);
+              $stmt->execute();
+              $stmt->store_result();
+              if ($stmt->num_rows > 0) {
+                  $stmt->bind_result($profileImage);
+                  $stmt->fetch();
+                  if (!empty($profileImage)) {
+                      // Use the uploaded image
+                      $driverImg = htmlspecialchars($profileImage);
+                  }
               }
+              $stmt->close();
           }
-          $stmt->close();
       }
       ?>
     <div class="profile-section text-center">
