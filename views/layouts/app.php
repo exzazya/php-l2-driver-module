@@ -49,32 +49,74 @@
       $driver_id = $_SESSION['driver_id'] ?? null;
       $driverName = $_SESSION['full_name'] ?? 'Driver';
       $driverEmail = $_SESSION['email'] ?? '';
-      $driverImg = 'img/default-profile.jpg'; // default image
+      $driverImg = 'img/default-profile.jpg'; // default image (under public)
 
-      if ($driver_id && isset($conn) && is_object($conn) && method_exists($conn, 'prepare')) {
-          // Fetch the driver's profile image from database (mysqli-like)
-          if ($stmt = $conn->prepare("SELECT profile_image FROM drivers WHERE id = ?")) {
-              $stmt->bind_param("i", $driver_id);
-              $stmt->execute();
-              $stmt->store_result();
-              if ($stmt->num_rows > 0) {
-                  $stmt->bind_result($profileImage);
-                  $stmt->fetch();
-                  if (!empty($profileImage)) {
-                      // Use the uploaded image
-                      $driverImg = htmlspecialchars($profileImage);
-                  }
+      // Prefer session-cached path set after upload
+      if (!empty($_SESSION['profile_image'])) {
+          $driverImg = (string)$_SESSION['profile_image'];
+      } elseif ($driver_id && function_exists('executeQuery')) {
+          // Fallback: fetch from DB using PDO helper
+          $stmt = executeQuery("SELECT profile_image FROM drivers WHERE id = ?", [$driver_id]);
+          if ($stmt) {
+              $row = $stmt->fetch();
+              if ($row && !empty($row['profile_image'])) {
+                  $driverImg = (string)$row['profile_image'];
               }
-              $stmt->close();
           }
       }
       ?>
     <div class="profile-section text-center">
-      <img src="<?php echo htmlspecialchars($driverImg); ?>" alt="Driver Profile" class="profile-img mb-2">
+      <?php if (!empty($_SESSION['flash_error']) || !empty($_SESSION['flash_success'])): ?>
+        <div class="mb-2">
+          <?php if (!empty($_SESSION['flash_error'])): ?>
+            <div class="alert alert-danger py-1 px-2 small mb-1"><?php echo htmlspecialchars($_SESSION['flash_error']); ?></div>
+          <?php endif; ?>
+          <?php if (!empty($_SESSION['flash_success'])): ?>
+            <div class="alert alert-success py-1 px-2 small mb-1"><?php echo htmlspecialchars($_SESSION['flash_success']); ?></div>
+          <?php endif; ?>
+        </div>
+        <?php unset($_SESSION['flash_error'], $_SESSION['flash_success']); ?>
+      <?php endif; ?>
+      <?php
+        // Resolve profile image URL: uploaded files live under /uploads, defaults under /public
+        $imgPath = (string)$driverImg;
+        if (strpos($imgPath, 'uploads/') === 0) {
+          $resolvedImgUrl = BASE_URL . '/' . $imgPath;
+          // Add cache-busting query using filemtime if file exists
+          $fsPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $imgPath);
+          if (is_file($fsPath)) {
+            $resolvedImgUrl .= '?v=' . filemtime($fsPath);
+          }
+        } else {
+          $resolvedImgUrl = asset($imgPath);
+        }
+      ?>
+      <div class="position-relative d-inline-block mb-2">
+        <img src="<?php echo htmlspecialchars($resolvedImgUrl); ?>" alt="Driver Profile" class="profile-img">
+        <form id="drvAvatarForm" action="<?php echo route('profile-upload'); ?>" method="post" enctype="multipart/form-data">
+          <input id="drvAvatarInput" class="d-none" type="file" name="avatar" accept="image/*" />
+        </form>
+        <button type="button" class="btn btn-light btn-sm rounded-circle position-absolute" style="right:-6px; bottom:-6px; box-shadow: 0 0 6px rgba(0,0,0,.2);" title="Change photo" onclick="document.getElementById('drvAvatarInput').click();">
+          <i class="bi bi-pencil"></i>
+        </button>
+      </div>
       <h6 class="fw-semibold mb-1"><?php echo htmlspecialchars($driverName); ?></h6>
       <small class="text-muted">Jetlouge Travels Driver</small>
       <br>
       <small class="text-muted"><?php echo htmlspecialchars($driverEmail); ?></small>
+      <script>
+        (function(){
+          const input = document.getElementById('drvAvatarInput');
+          const form = document.getElementById('drvAvatarForm');
+          if (input && form) {
+            input.addEventListener('change', function(){
+              if (input.files && input.files.length > 0) {
+                form.submit();
+              }
+            });
+          }
+        })();
+      </script>
     </div>
 
     <!-- Navigation Menu -->

@@ -68,7 +68,19 @@ ob_start();
         
         <!-- Profile Image -->
         <div class="profile-image mb-3 mb-md-0 me-md-4 text-center">
-          <img src="<?php echo !empty($driver['profile_image']) ? htmlspecialchars($driver['profile_image']) : 'img/default-avatar.png'; ?>" 
+          <?php
+            $rawImg = !empty($driver['profile_image']) ? (string)$driver['profile_image'] : 'img/default-avatar.png';
+            if (strpos($rawImg, 'uploads/') === 0) {
+              $imgUrl = BASE_URL . '/' . $rawImg;
+              $fsPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $rawImg);
+              if (is_file($fsPath)) {
+                $imgUrl .= '?v=' . filemtime($fsPath);
+              }
+            } else {
+              $imgUrl = asset($rawImg);
+            }
+          ?>
+          <img src="<?php echo htmlspecialchars($imgUrl); ?>" 
                alt="Profile Image" 
                class="rounded-circle border border-3 border-light shadow-sm" 
                width="100" height="100">
