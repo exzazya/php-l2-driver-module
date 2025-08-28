@@ -122,6 +122,9 @@ try {
             } elseif ($action === 'decline') {
                 executeQuery('UPDATE mobile_assignments SET is_viewed = 1, is_declined = 1, declined_at = NOW(), decline_reason = ? WHERE id = ?', [$declineReason, $ma['id']]);
                 executeQuery("UPDATE trips SET status = 'declined' WHERE id = ?", [$tripId]);
+                
+                // Update reservation status to declined and clear driver/vehicle assignment
+                executeQuery("UPDATE reservations SET status = 'declined', driver_id = NULL, vehicle_id = NULL WHERE id = (SELECT reservation_id FROM trips WHERE id = ?)", [$tripId]);
 
                 executeQuery('INSERT INTO audits (actor_type, actor_id, action, entity_type, entity_id, metadata_json) VALUES (?,?,?,?,?,?)', [
                     'driver', $driverId, 'decline_assignment', 'trip', $tripId, json_encode(['assignment_id' => $ma['id'], 'reason' => (string)$declineReason])
@@ -129,6 +132,33 @@ try {
 
                 $pdo->commit();
                 echo generateApiResponse(true, ['trip_id' => $tripId, 'assignment_id' => $ma['id'], 'status' => 'declined'], 'Assignment declined');
+                exit();
+            } elseif ($action === 'complete') {
+                // Complete the trip
+                if ($ma['is_accepted'] != 1) {
+                    $pdo->rollBack();
+                    http_response_code(400);
+                    echo generateApiResponse(false, null, 'Cannot complete trip: assignment was not accepted');
+                    exit();
+                }
+
+                // Update trip status to completed
+                executeQuery("UPDATE trips SET status = 'completed', completed_at = NOW() WHERE id = ?", [$tripId]);
+                
+                // Update assignment as completed
+                executeQuery('UPDATE mobile_assignments SET completed_at = NOW() WHERE id = ?', [$ma['id']]);
+                
+                // Set driver and vehicle back to active status
+                executeQuery("UPDATE drivers SET status = 'active' WHERE id = ?", [$driverId]);
+                executeQuery("UPDATE vehicles v JOIN trips t ON v.id = t.vehicle_id SET v.status = 'active' WHERE t.id = ?", [$tripId]);
+
+                // Log the completion
+                executeQuery('INSERT INTO audits (actor_type, actor_id, action, entity_type, entity_id, metadata_json) VALUES (?,?,?,?,?,?)', [
+                    'driver', $driverId, 'complete_trip', 'trip', $tripId, json_encode(['assignment_id' => $ma['id']])
+                ]);
+
+                $pdo->commit();
+                echo generateApiResponse(true, ['trip_id' => $tripId, 'assignment_id' => $ma['id'], 'status' => 'completed'], 'Trip completed successfully');
                 exit();
             } else {
                 $pdo->rollBack();

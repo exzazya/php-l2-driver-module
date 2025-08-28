@@ -31,7 +31,30 @@ document.addEventListener("DOMContentLoaded", function() {
   // Ensure proper sizing when embedded in cards/columns
   setTimeout(() => map.invalidateSize(), 0);
   window.addEventListener('resize', () => { try { map.invalidateSize(); } catch(_){} });
-  const driverMarker = L.marker([0,0]).addTo(map).bindPopup("<b>Driver: You</b>");
+  
+  // Custom icons for different marker types
+  const driverIcon = L.divIcon({
+    className: 'driver-marker',
+    html: '<div class="marker-pin driver-pin"><i class="fas fa-car"></i></div>',
+    iconSize: [30, 30],
+    iconAnchor: [15, 15]
+  });
+  
+  const startIcon = L.divIcon({
+    className: 'start-marker',
+    html: '<div class="marker-pin start-pin"><i class="fas fa-play"></i></div>',
+    iconSize: [25, 25],
+    iconAnchor: [12.5, 12.5]
+  });
+  
+  const destIcon = L.divIcon({
+    className: 'dest-marker',
+    html: '<div class="marker-pin dest-pin"><i class="fas fa-flag-checkered"></i></div>',
+    iconSize: [25, 25],
+    iconAnchor: [12.5, 12.5]
+  });
+  
+  const driverMarker = L.marker([0,0], {icon: driverIcon}).addTo(map).bindPopup("<b>Driver Location</b><br>Real-time GPS position");
   let startMarker = null, destMarker = null, routeLine = null;
   let trailLine = null; // breadcrumb of uploaded GPS points
   let trailCoords = [];
@@ -79,6 +102,53 @@ document.addEventListener("DOMContentLoaded", function() {
     const fromAddr = document.getElementById('fromAddress');
     if (fromAddr) fromAddr.textContent = new Date().toLocaleString();
     updatePickupButtonState();
+    updateCompleteButtonState();
+  }
+
+  function onCompleteTrip() {
+    if (!activeTrip || !pickedUp) return;
+    if (!confirm('Are you sure you want to complete this trip?')) return;
+    
+    const btn = document.getElementById('completeBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Completing...';
+    btn.disabled = true;
+    
+    // Call API to complete the trip
+    completeTrip(activeTrip.trip_id || activeTrip.id)
+      .then(() => {
+        // Trip completed successfully
+        alert('Trip completed successfully!');
+        // Redirect back to trip assignment page
+        window.location.href = 'index.php?route=trip-assignment';
+      })
+      .catch(error => {
+        console.error('Failed to complete trip:', error);
+        alert('Failed to complete trip: ' + error.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      });
+  }
+
+  async function completeTrip(tripId) {
+    const response = await fetch('api/assignments.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        action: 'complete',
+        trip_id: tripId
+      })
+    });
+    
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.success === false) {
+      throw new Error(data?.message || 'Failed to complete trip');
+    }
+    return data;
   }
 
   // Draw road-snapped route using OSRM demo server (no API key). Fallback handled by caller.
@@ -110,7 +180,10 @@ document.addEventListener("DOMContentLoaded", function() {
     });
     const pu = document.getElementById('pickupBtn');
     if (pu) pu.addEventListener('click', onPickUp);
+    const cb = document.getElementById('completeBtn');
+    if (cb) cb.addEventListener('click', onCompleteTrip);
     updatePickupButtonState();
+    updateCompleteButtonState();
   }
 
   async function loadActiveTrip() {
@@ -136,6 +209,7 @@ document.addEventListener("DOMContentLoaded", function() {
       updateTripInfo(trip);
       renderRoute(trip);
       updatePickupButtonState();
+      updateCompleteButtonState();
     } catch (e) {
       console.error('Failed loading active trip', e);
     }
@@ -151,6 +225,18 @@ document.addEventListener("DOMContentLoaded", function() {
       pu.style.display = '';
       pu.disabled = false;
       pu.textContent = 'Pick Up';
+    }
+  }
+
+  function updateCompleteButtonState() {
+    const cb = document.getElementById('completeBtn');
+    if (!cb) return;
+    const hasTrip = !!activeTrip;
+    if (!hasTrip || !pickedUp) {
+      cb.style.display = 'none';
+    } else {
+      cb.style.display = '';
+      cb.disabled = false;
     }
   }
 
@@ -188,8 +274,18 @@ document.addEventListener("DOMContentLoaded", function() {
     const hasStart = Number.isFinite(slat) && Number.isFinite(slng);
     const hasDest = Number.isFinite(dlat) && Number.isFinite(dlng);
 
-    if (hasStart && !pickedUp) startMarker = L.marker([slat, slng], { title: 'Start' }).addTo(map);
-    if (hasDest) destMarker = L.marker([dlat, dlng], { title: 'Destination' }).addTo(map);
+    if (hasStart && !pickedUp) {
+      startMarker = L.marker([slat, slng], { 
+        icon: startIcon, 
+        title: 'Start Location' 
+      }).addTo(map).bindPopup(`<b>Start Location</b><br>${activeTrip.start_location || 'Pickup Point'}`);
+    }
+    if (hasDest) {
+      destMarker = L.marker([dlat, dlng], { 
+        icon: destIcon, 
+        title: 'Destination' 
+      }).addTo(map).bindPopup(`<b>Destination</b><br>${activeTrip.destination || 'Drop-off Point'}`);
+    }
     if (!pickedUp && hasStart && hasDest) {
       // Try road-snapped route via OSRM; fallback to straight line if it fails
       drawRoadRoute([slat, slng], [dlat, dlng])
@@ -299,11 +395,23 @@ document.addEventListener("DOMContentLoaded", function() {
 
   // Polling for recent GPS points and render breadcrumb trail
   let trailTimer = null;
+  let allLocationsMarkers = []; // Store all location markers for database view
 
   function startPollingTrail() {
     if (trailTimer) clearInterval(trailTimer);
     pollTrailOnce();
-    trailTimer = setInterval(pollTrailOnce, 5000);
+    trailTimer = setInterval(pollTrailOnce, 3000); // Poll every 3 seconds for more responsive updates
+  }
+  
+  function toggleDatabaseLocations() {
+    const showAll = document.getElementById('showAllLocations').checked;
+    allLocationsMarkers.forEach(marker => {
+      if (showAll) {
+        map.addLayer(marker);
+      } else {
+        map.removeLayer(marker);
+      }
+    });
   }
 
   async function pollTrailOnce() {
@@ -334,6 +442,39 @@ document.addEventListener("DOMContentLoaded", function() {
       } else {
         trailLine.setLatLngs(trailCoords);
       }
+      
+      // Clear previous location markers
+      allLocationsMarkers.forEach(marker => map.removeLayer(marker));
+      allLocationsMarkers = [];
+      
+      // Create markers for database locations (hidden by default)
+      locs.forEach((loc, index) => {
+        const lat = parseFloat(loc.lat);
+        const lng = parseFloat(loc.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        
+        const locationIcon = L.divIcon({
+          className: 'location-marker',
+          html: `<div class="marker-pin location-pin"><span>${index + 1}</span></div>`,
+          iconSize: [20, 20],
+          iconAnchor: [10, 10]
+        });
+        
+        const marker = L.marker([lat, lng], {icon: locationIcon})
+          .bindPopup(`
+            <b>Location ${index + 1}</b><br>
+            Speed: ${loc.speed ? (parseFloat(loc.speed).toFixed(1) + ' km/h') : 'N/A'}<br>
+            Time: ${new Date(loc.captured_at).toLocaleString()}<br>
+            Accuracy: ${loc.accuracy ? (parseFloat(loc.accuracy).toFixed(1) + 'm') : 'N/A'}
+          `);
+        
+        allLocationsMarkers.push(marker);
+        
+        // Only show if toggle is enabled
+        if (document.getElementById('showAllLocations')?.checked) {
+          map.addLayer(marker);
+        }
+      });
 
       const last = trailCoords[trailCoords.length - 1];
       if (last) {
@@ -428,6 +569,9 @@ ob_start();
             <button class="btn btn-warning btn-sm" id="pickupBtn">
                 <i class="fas fa-user-check me-1"></i>Pick Up
             </button>
+            <button class="btn btn-success btn-sm" id="completeBtn" style="display: none;">
+                <i class="fas fa-flag-checkered me-1"></i>Complete Trip
+            </button>
             <button class="btn btn-outline-primary btn-sm" id="centerMapBtn">
                 <i class="fas fa-crosshairs me-1"></i>Center Map
             </button>
@@ -498,6 +642,12 @@ ob_start();
             </div>
             <div class="card-body p-0" style="height: 500px; position: relative;">
                 <div id="map" style="height: 100%; width: 100%;"></div>
+                <div class="map-controls">
+                    <label>
+                        <input type="checkbox" id="showAllLocations" onchange="toggleDatabaseLocations()">
+                        Show DB Locations
+                    </label>
+                </div>
             </div>
         </div>
     </div>
@@ -662,6 +812,66 @@ ob_start();
     padding: 12px;
     border-radius: 8px;
     font-size: 0.9rem;
+}
+
+/* Custom marker styles */
+.marker-pin {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 2px solid white;
+}
+
+.driver-pin {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    animation: pulse-driver 2s infinite;
+}
+
+.start-pin {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+}
+
+.dest-pin {
+    background: linear-gradient(135deg, #dc3545, #bd2130);
+}
+
+.location-pin {
+    background: linear-gradient(135deg, #ffc107, #e0a800);
+    color: #000;
+    font-size: 10px;
+    width: 18px;
+    height: 18px;
+}
+
+@keyframes pulse-driver {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.map-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: white;
+    padding: 8px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.map-controls label {
+    font-size: 12px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 5px;
 }
 
 
