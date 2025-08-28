@@ -8,18 +8,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadAll() {
     setTablePlaceholders();
-    const [pending, accepted, declined] = await Promise.all([
+    const [pending, accepted, completed] = await Promise.all([
       fetchAssignments('pending'),
       fetchAssignments('accepted'),
-      fetchAssignments('declined')
+      fetchAssignments('completed')
     ]);
 
     renderCurrent([...pending, ...accepted]);
-    renderCompleted([...declined]); // if you mark completed later, include here
+    renderCompleted([...completed]);
     updateStats({
       pending: pending.length,
       active: accepted.length,
-      completed: 0 // unknown yet – will update once completed flow is in place
+      completed: completed.length
     });
   }
 
@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td><div>${escapeHtml(vehicle)}</div><small class="text-muted">${escapeHtml(driver)}</small></td>
         <td><div class="text-truncate" style="max-width:260px">${escapeHtml(route)}</div></td>
         <td>${escapeHtml(formatDateTime(sched))}</td>
-        <td><span class="badge bg-success">Declined</span></td>
+        <td><span class="badge bg-success">Completed</span></td>
       `;
       completedTbody.appendChild(tr);
     }

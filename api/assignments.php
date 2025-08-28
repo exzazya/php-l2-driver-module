@@ -42,6 +42,9 @@ try {
                 $where = "AND ma.is_accepted = 1";
             } elseif ($status === 'declined') {
                 $where = "AND ma.is_declined = 1";
+            } elseif ($status === 'completed') {
+                // Completed trips: either trip is marked completed or assignment has a completed timestamp
+                $where = "AND (t.status = 'completed' OR ma.completed_at IS NOT NULL)";
             }
 
             $stmt = executeQuery(

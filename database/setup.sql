@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS trips (
     start_datetime DATETIME,
     end_datetime DATETIME,
     status ENUM('requested', 'assigned', 'accepted', 'en_route', 'arrived', 'completed', 'declined', 'cancelled', 'scheduled', 'in_progress') DEFAULT 'scheduled',
+    completed_at DATETIME NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (reservation_id) REFERENCES reservations(id),
@@ -282,6 +283,8 @@ CREATE TABLE IF NOT EXISTS mobile_assignments (
     is_declined BOOLEAN DEFAULT FALSE,
     declined_at DATETIME NULL,
     decline_reason VARCHAR(255) NULL,
+    -- Completion support
+    completed_at DATETIME NULL,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
 );
