@@ -76,58 +76,139 @@ document.addEventListener("DOMContentLoaded", function() {
     lastUpdateEl.textContent = "Waiting for data...";
     await loadActiveTrip();
     wireButtons();
-    startGeolocation();
-    startPollingTrail();
+    
+    // Only start GPS if there's an active trip
+    if (activeTrip) {
+      startGeolocation();
+      startPollingTrail();
+    } else {
+      lastUpdateEl.textContent = "No active trip - GPS tracking disabled";
+    }
   }
 
   function onPickUp() {
     if (!activeTrip) return;
     pickedUp = true;
-    // Hide start marker
-    if (startMarker) { try { map.removeLayer(startMarker); } catch(_){} startMarker = null; }
-    // Remove previous route and rebuild from driver to destination
-    if (routeLine) { try { map.removeLayer(routeLine); } catch(_){} routeLine = null; }
+    
+    // Hide start marker completely
+    if (startMarker) { 
+      try { 
+        map.removeLayer(startMarker); 
+      } catch(_){} 
+      startMarker = null; 
+    }
+    
+    // Remove previous route completely
+    if (routeLine) { 
+      try { 
+        if (routeLine.clearLayers) {
+          routeLine.clearLayers(); // If it's a layerGroup
+        }
+        map.removeLayer(routeLine); 
+      } catch(_){} 
+      routeLine = null; 
+    }
+    
+    // Draw new route only from driver to destination
     if (destMarker) {
       const cur = driverMarker.getLatLng();
       const d = destMarker.getLatLng();
-      if (cur && d) {
+      if (cur && d && Number.isFinite(cur.lat) && Number.isFinite(cur.lng)) {
         drawRoadRoute([cur.lat, cur.lng], [d.lat, d.lng]).catch(() => {
-          routeLine = L.polyline([[cur.lat, cur.lng], [d.lat, d.lng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
+          // Fallback to straight line if routing fails
+          routeLine = L.polyline([[cur.lat, cur.lng], [d.lat, d.lng]], { 
+            color: '#28a745', // Green color to indicate picked up
+            weight: 4, 
+            opacity: 0.8 
+          }).addTo(map);
         });
       }
     }
-    // Optionally, update UI labels
+    
+    // Update UI labels
     const fromTitle = document.getElementById('fromTitle');
     if (fromTitle) fromTitle.textContent = 'Picked Up';
     const fromAddr = document.getElementById('fromAddress');
     if (fromAddr) fromAddr.textContent = new Date().toLocaleString();
+    
     updatePickupButtonState();
     updateCompleteButtonState();
   }
 
   function onCompleteTrip() {
-    if (!activeTrip || !pickedUp) return;
-    if (!confirm('Are you sure you want to complete this trip?')) return;
+    if (!activeTrip || !pickedUp) {
+      alert('Cannot complete trip: Trip must be picked up first.');
+      return;
+    }
+    
+    if (!confirm('Are you sure you want to complete this trip? This action cannot be undone.')) return;
     
     const btn = document.getElementById('completeBtn');
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Completing...';
     btn.disabled = true;
     
-    // Call API to complete the trip
-    completeTrip(activeTrip.trip_id || activeTrip.id)
-      .then(() => {
-        // Trip completed successfully
-        alert('Trip completed successfully!');
-        // Redirect back to trip assignment page
-        window.location.href = 'index.php?route=trip-assignment';
-      })
-      .catch(error => {
-        console.error('Failed to complete trip:', error);
-        alert('Failed to complete trip: ' + error.message);
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+    // Stop GPS tracking when completing trip
+    if (navigator.geolocation && window.geoWatchId) {
+      navigator.geolocation.clearWatch(window.geoWatchId);
+      window.geoWatchId = null;
+    }
+    
+    // Upload any remaining GPS points before completing
+    if (pendingPoints.length > 0) {
+      maybeUpload().finally(() => {
+        completeTrip(activeTrip.trip_id || activeTrip.id)
+          .then(handleTripCompletion)
+          .catch(error => handleTripCompletionError(error, btn, originalText));
       });
+    } else {
+      completeTrip(activeTrip.trip_id || activeTrip.id)
+        .then(handleTripCompletion)
+        .catch(error => handleTripCompletionError(error, btn, originalText));
+    }
+  }
+  
+  function handleTripCompletion(data) {
+    // Clear all map elements
+    if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+    if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+    if (routeLine) { 
+      try {
+        if (routeLine.clearLayers) routeLine.clearLayers();
+        map.removeLayer(routeLine); 
+      } catch(_){}
+      routeLine = null; 
+    }
+    if (trailLine) { map.removeLayer(trailLine); trailLine = null; }
+    
+    // Clear trip data
+    activeTrip = null;
+    pickedUp = false;
+    
+    // Update UI
+    fromTitleEl.textContent = 'Trip Completed';
+    fromAddrEl.textContent = new Date().toLocaleString();
+    toTitleEl.textContent = 'Thank you!';
+    toAddrEl.textContent = 'Trip finished successfully';
+    if (lastUpdateEl) lastUpdateEl.textContent = 'Trip completed';
+    
+    // Hide buttons
+    updatePickupButtonState();
+    updateCompleteButtonState();
+    
+    alert('Trip completed successfully! Redirecting to trip assignment page...');
+    
+    // Redirect after a short delay
+    setTimeout(() => {
+      window.location.href = 'index.php?route=trip-assignment';
+    }, 2000);
+  }
+  
+  function handleTripCompletionError(error, btn, originalText) {
+    console.error('Failed to complete trip:', error);
+    alert('Failed to complete trip: ' + (error.message || 'Unknown error occurred'));
+    btn.innerHTML = originalText;
+    btn.disabled = false;
   }
 
   async function completeTrip(tripId) {
@@ -151,16 +232,135 @@ document.addEventListener("DOMContentLoaded", function() {
     return data;
   }
 
+  // Draw three-point route: Driver → Pick Up → Destination
+  async function drawThreePointRoute(driverPos, pickupPos, destPos) {
+    try {
+      // Validate all coordinates
+      const positions = [driverPos, pickupPos, destPos];
+      for (const pos of positions) {
+        if (!Array.isArray(pos) || !Number.isFinite(pos[0]) || !Number.isFinite(pos[1])) {
+          throw new Error('Invalid coordinates');
+        }
+      }
+
+      // Check distances are reasonable
+      const dist1 = haversineKm(driverPos, pickupPos);
+      const dist2 = haversineKm(pickupPos, destPos);
+      if (dist1 > 1000 || dist2 > 1000) {
+        throw new Error('Distance too large');
+      }
+
+      // If driver is already at pickup (within 100m), just show pickup to destination
+      if (dist1 < 0.1) {
+        return drawRoadRoute(pickupPos, destPos);
+      }
+
+      // Draw two separate route segments with different colors
+      try {
+        // Segment 1: Driver → Pick Up (orange/yellow)
+        const url1 = `https://router.project-osrm.org/route/v1/driving/${driverPos[1]},${driverPos[0]};${pickupPos[1]},${pickupPos[0]}?overview=full&geometries=geojson`;
+        const res1 = await fetch(url1, { headers: { 'Accept': 'application/json' } });
+        const data1 = await res1.json();
+        
+        // Segment 2: Pick Up → Destination (blue)
+        const url2 = `https://router.project-osrm.org/route/v1/driving/${pickupPos[1]},${pickupPos[0]};${destPos[1]},${destPos[0]}?overview=full&geometries=geojson`;
+        const res2 = await fetch(url2, { headers: { 'Accept': 'application/json' } });
+        const data2 = await res2.json();
+
+        let routeSegments = [];
+
+        // Add first segment if successful
+        if (res1.ok && data1?.routes?.[0]) {
+          const coords1 = data1.routes[0].geometry.coordinates;
+          const latlngs1 = coords1.map(c => [c[1], c[0]]);
+          const segment1 = L.polyline(latlngs1, { 
+            color: pickedUp ? '#28a745' : '#ffc107', // Green if picked up, yellow if not
+            weight: 4, 
+            opacity: 0.8,
+            dashArray: pickedUp ? null : '10, 5' // Dashed if not picked up yet
+          }).addTo(map);
+          routeSegments.push(segment1);
+        }
+
+        // Add second segment if successful
+        if (res2.ok && data2?.routes?.[0]) {
+          const coords2 = data2.routes[0].geometry.coordinates;
+          const latlngs2 = coords2.map(c => [c[1], c[0]]);
+          const segment2 = L.polyline(latlngs2, { 
+            color: '#007bff', // Blue for pickup to destination
+            weight: 4, 
+            opacity: 0.8 
+          }).addTo(map);
+          routeSegments.push(segment2);
+        }
+
+        // Store segments for cleanup
+        if (routeSegments.length > 0) {
+          routeLine = L.layerGroup(routeSegments).addTo(map);
+        } else {
+          throw new Error('No route segments available');
+        }
+
+      } catch (e) {
+        // Fallback to straight lines if OSRM fails
+        console.warn('OSRM three-point route failed, using fallback', e);
+        const segments = [];
+        
+        if (dist1 <= 500) {
+          segments.push(L.polyline([driverPos, pickupPos], { 
+            color: pickedUp ? '#28a745' : '#ffc107', 
+            weight: 3, 
+            opacity: 0.7,
+            dashArray: pickedUp ? null : '10, 5'
+          }));
+        }
+        
+        if (dist2 <= 500) {
+          segments.push(L.polyline([pickupPos, destPos], { 
+            color: '#007bff', 
+            weight: 3, 
+            opacity: 0.7 
+          }));
+        }
+
+        if (segments.length > 0) {
+          routeLine = L.layerGroup(segments).addTo(map);
+        }
+      }
+
+    } catch (e) {
+      console.warn('Three-point route failed', e);
+      throw e;
+    }
+  }
+
   // Draw road-snapped route using OSRM demo server (no API key). Fallback handled by caller.
   async function drawRoadRoute(start, dest) {
     try {
+      // Validate coordinates before making request
+      if (!Array.isArray(start) || !Array.isArray(dest) || 
+          !Number.isFinite(start[0]) || !Number.isFinite(start[1]) ||
+          !Number.isFinite(dest[0]) || !Number.isFinite(dest[1])) {
+        throw new Error('Invalid coordinates');
+      }
+      
+      // Check if coordinates are reasonable (not too far apart)
+      const distance = haversineKm(start, dest);
+      if (distance > 1000) { // More than 1000km seems unreasonable for a single trip
+        throw new Error('Distance too large');
+      }
+      
       const url = `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${dest[1]},${dest[0]}?overview=full&geometries=geojson`;
       const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
       const data = await res.json();
       if (!res.ok || !data || !data.routes || !data.routes[0]) throw new Error('No route');
       const coords = data.routes[0].geometry.coordinates; // [lng, lat]
       const latlngs = coords.map(c => [c[1], c[0]]);
-      routeLine = L.polyline(latlngs, { color: 'blue', weight: 4, opacity: 0.8 }).addTo(map);
+      
+      // Use green color if picked up, blue if not
+      const routeColor = pickedUp ? '#28a745' : '#007bff';
+      routeLine = L.polyline(latlngs, { color: routeColor, weight: 4, opacity: 0.8 }).addTo(map);
+      
       if (!firstViewDone) {
         map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
         firstViewDone = true;
@@ -274,58 +474,101 @@ document.addEventListener("DOMContentLoaded", function() {
     const hasStart = Number.isFinite(slat) && Number.isFinite(slng);
     const hasDest = Number.isFinite(dlat) && Number.isFinite(dlng);
 
-    if (hasStart && !pickedUp) {
+    // Always show start marker if we have coordinates
+    if (hasStart) {
       startMarker = L.marker([slat, slng], { 
         icon: startIcon, 
-        title: 'Start Location' 
-      }).addTo(map).bindPopup(`<b>Start Location</b><br>${activeTrip.start_location || 'Pickup Point'}`);
+        title: 'Pick Up Location' 
+      }).addTo(map).bindPopup(`<b>Pick Up Location</b><br>${activeTrip.start_location || 'Pickup Point'}`);
     }
+    
+    // Always show destination marker if we have coordinates
     if (hasDest) {
       destMarker = L.marker([dlat, dlng], { 
         icon: destIcon, 
         title: 'Destination' 
       }).addTo(map).bindPopup(`<b>Destination</b><br>${activeTrip.destination || 'Drop-off Point'}`);
     }
-    if (!pickedUp && hasStart && hasDest) {
-      // Try road-snapped route via OSRM; fallback to straight line if it fails
-      drawRoadRoute([slat, slng], [dlat, dlng])
-        .catch(() => {
-          routeLine = L.polyline([[slat, slng], [dlat, dlng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
-          if (!firstViewDone) {
-            map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-            firstViewDone = true;
-          }
-        });
-    } else if (!pickedUp && hasStart && !firstViewDone) {
+
+    // Draw three-point route: Driver → Pick Up → Destination
+    if (hasStart && hasDest) {
+      const cur = driverMarker.getLatLng();
+      if (cur && Number.isFinite(cur.lat) && Number.isFinite(cur.lng)) {
+        drawThreePointRoute([cur.lat, cur.lng], [slat, slng], [dlat, dlng]);
+      } else {
+        // If no driver location yet, just show pickup to destination
+        const distance = haversineKm([slat, slng], [dlat, dlng]);
+        if (distance <= 1000) {
+          drawRoadRoute([slat, slng], [dlat, dlng])
+            .catch(() => {
+              if (distance <= 500) {
+                routeLine = L.polyline([[slat, slng], [dlat, dlng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
+              }
+            });
+        }
+      }
+      
+      if (!firstViewDone) {
+        // Fit bounds to include all three points
+        const bounds = L.latLngBounds([
+          [cur?.lat || slat, cur?.lng || slng],
+          [slat, slng],
+          [dlat, dlng]
+        ]);
+        map.fitBounds(bounds, { padding: [30, 30] });
+        firstViewDone = true;
+      }
+    } else if (hasStart && !firstViewDone) {
       // Center on start if only start is known
       map.setView([slat, slng], 16);
       firstViewDone = true;
-    } else if (pickedUp && hasDest) {
-      // If picked up, route from current driver location to destination
-      const cur = driverMarker.getLatLng();
-      if (cur && Number.isFinite(cur.lat) && Number.isFinite(cur.lng)) {
-        drawRoadRoute([cur.lat, cur.lng], [dlat, dlng])
-          .catch(() => {
-            routeLine = L.polyline([[cur.lat, cur.lng], [dlat, dlng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
-            if (!firstViewDone) {
-              map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-              firstViewDone = true;
-            }
-          });
-      }
+    } else if (hasDest && !firstViewDone) {
+      // Center on destination if only destination is known
+      map.setView([dlat, dlng], 16);
+      firstViewDone = true;
     }
   }
 
   function startGeolocation() {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      alert('Geolocation is not supported by your browser. Please enable location services to track your trip.');
       return;
     }
-    navigator.geolocation.watchPosition(onPosition, onGeoError, {
-      enableHighAccuracy: true,
-      maximumAge: 2000,
-      timeout: 8000
-    });
+    
+    // Request location permission and start tracking
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        // Initial position successful, start continuous tracking
+        window.geoWatchId = navigator.geolocation.watchPosition(onPosition, onGeoError, {
+          enableHighAccuracy: true,
+          maximumAge: 2000,
+          timeout: 8000
+        });
+        // Process the initial position
+        onPosition(position);
+      },
+      (error) => {
+        console.error('Initial geolocation failed:', error);
+        if (error.code === error.PERMISSION_DENIED) {
+          alert('Location access denied. Please enable location permissions in your browser settings to track your trip.');
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          alert('Location information is unavailable. Please check your GPS/location services.');
+        } else if (error.code === error.TIMEOUT) {
+          alert('Location request timed out. Trying again...');
+          // Retry with watchPosition anyway
+          window.geoWatchId = navigator.geolocation.watchPosition(onPosition, onGeoError, {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 15000
+          });
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
   }
 
   function onPosition(position) {
@@ -345,13 +588,36 @@ document.addEventListener("DOMContentLoaded", function() {
       firstViewDone = true;
     }
 
-    // If already picked up and we have a destination, refresh route from current position
-    if (pickedUp && destMarker) {
-      if (routeLine) { try { map.removeLayer(routeLine); } catch(_){} routeLine = null; }
-      const d = destMarker.getLatLng();
-      drawRoadRoute([lat, lng], [d.lat, d.lng]).catch(() => {
-        routeLine = L.polyline([[lat, lng], [d.lat, d.lng]], { color: 'blue', weight: 3, opacity: 0.7 }).addTo(map);
-      });
+    // Refresh route when driver location updates
+    if (activeTrip && destMarker) {
+      if (routeLine) { 
+        try { 
+          if (routeLine.clearLayers) {
+            routeLine.clearLayers(); // If it's a layerGroup
+          }
+          map.removeLayer(routeLine); 
+        } catch(_){} 
+        routeLine = null; 
+      }
+      
+      if (pickedUp) {
+        // After pickup: only draw driver to destination
+        const dest = destMarker.getLatLng();
+        drawRoadRoute([lat, lng], [dest.lat, dest.lng]).catch(() => {
+          routeLine = L.polyline([[lat, lng], [dest.lat, dest.lng]], { 
+            color: '#28a745', // Green for picked up
+            weight: 4, 
+            opacity: 0.8 
+          }).addTo(map);
+        });
+      } else if (startMarker) {
+        // Before pickup: draw three-point route
+        const pickup = startMarker.getLatLng();
+        const dest = destMarker.getLatLng();
+        drawThreePointRoute([lat, lng], [pickup.lat, pickup.lng], [dest.lat, dest.lng]).catch(() => {
+          console.warn('Failed to update three-point route');
+        });
+      }
     }
     if (speedEl) speedEl.textContent = `${(speedKmh || 0).toFixed(1)} km/h`;
     if (lastUpdateEl) lastUpdateEl.textContent = 'Just updated';
@@ -366,7 +632,25 @@ document.addEventListener("DOMContentLoaded", function() {
 
   function onGeoError(error) {
     console.error('Geolocation error:', error);
-    alert('Unable to fetch your location. Make sure location is enabled in your browser.');
+    let message = 'Unable to fetch your location. ';
+    
+    switch(error.code) {
+      case error.PERMISSION_DENIED:
+        message += 'Location access was denied. Please enable location permissions and refresh the page.';
+        break;
+      case error.POSITION_UNAVAILABLE:
+        message += 'Location information is unavailable. Please check your GPS settings.';
+        break;
+      case error.TIMEOUT:
+        message += 'Location request timed out. Please try again.';
+        break;
+      default:
+        message += 'Make sure location is enabled in your browser.';
+        break;
+    }
+    
+    if (lastUpdateEl) lastUpdateEl.textContent = 'GPS Error - ' + message;
+    alert(message);
   }
 
   async function maybeUpload() {
@@ -566,18 +850,7 @@ ob_start();
             </div>
         </div>
         <div class="d-flex gap-2">
-            <button class="btn btn-warning btn-sm" id="pickupBtn">
-                <i class="fas fa-user-check me-1"></i>Pick Up
-            </button>
-            <button class="btn btn-success btn-sm" id="completeBtn" style="display: none;">
-                <i class="fas fa-flag-checkered me-1"></i>Complete Trip
-            </button>
-            <button class="btn btn-outline-primary btn-sm" id="centerMapBtn">
-                <i class="fas fa-crosshairs me-1"></i>Center Map
-            </button>
-            <button class="btn btn-outline-success btn-sm" id="refreshBtn">
-                <i class="fas fa-sync-alt me-1"></i>Refresh
-            </button>
+            <!-- Pickup and Complete buttons moved to map footer -->
         </div>
     </div>
 </div>
@@ -647,6 +920,22 @@ ob_start();
                         <input type="checkbox" id="showAllLocations" onchange="toggleDatabaseLocations()">
                         Show DB Locations
                     </label>
+                </div>
+            </div>
+            <div class="card-footer bg-light">
+                <div class="d-flex justify-content-center gap-2">
+                    <button class="btn btn-warning btn-sm" id="pickupBtn" style="display: none;">
+                        <i class="fas fa-user-check me-1"></i>Pick Up
+                    </button>
+                    <button class="btn btn-success btn-sm" id="completeBtn" style="display: none;">
+                        <i class="fas fa-flag-checkered me-1"></i>Complete Trip
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm" id="centerMapBtn">
+                        <i class="fas fa-crosshairs me-1"></i>Center Map
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" id="refreshBtn">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh
+                    </button>
                 </div>
             </div>
         </div>
