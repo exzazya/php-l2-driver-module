@@ -37,11 +37,11 @@ try {
             $params = [$driverId];
             if ($status === 'pending') {
                 // Consider NULL flags as pending
-                $where = "AND (ma.is_declined = 0 OR ma.is_declined IS NULL) AND (ma.is_accepted = 0 OR ma.is_accepted IS NULL)";
+                $where = "AND (ma.is_declined = 0 OR ma.is_declined IS NULL) AND (ma.is_accepted = 0 OR ma.is_accepted IS NULL) AND (t.status != 'completed' AND ma.completed_at IS NULL)";
             } elseif ($status === 'accepted') {
-                $where = "AND ma.is_accepted = 1";
+                $where = "AND ma.is_accepted = 1 AND (t.status != 'completed' AND ma.completed_at IS NULL)";
             } elseif ($status === 'declined') {
-                $where = "AND ma.is_declined = 1";
+                $where = "AND ma.is_declined = 1 AND (t.status != 'completed' AND ma.completed_at IS NULL)";
             } elseif ($status === 'completed') {
                 // Completed trips: either trip is marked completed or assignment has a completed timestamp
                 $where = "AND (t.status = 'completed' OR ma.completed_at IS NOT NULL)";
