@@ -1,12 +1,6 @@
 <?php
 $title = "Driver Dashboard";
-session_start();
-require 'db_connect.php'; // make sure this connects properly
-
-if (!isset($_SESSION['driver_id'])) {
-    header("Location: index.php"); // redirect if not logged in
-    exit;
-}
+require __DIR__ . '/db_connect.php'; // DB connection (mysqli)
 
 // Get full driver profile
 $driver_id = $_SESSION['driver_id'];
@@ -31,6 +25,9 @@ if ($row = $result->fetch_assoc()) {
     $driver = $row;
 }
 $stmt->close();
+
+// Page-specific scripts
+$scripts = '<script src="' . asset('js/dashboard.js') . '"></script>';
 
 // Start capturing content
 ob_start();
@@ -69,7 +66,7 @@ ob_start();
         <!-- Profile Image -->
         <div class="profile-image mb-3 mb-md-0 me-md-4 text-center">
           <?php
-            $rawImg = !empty($driver['profile_image']) ? (string)$driver['profile_image'] : 'img/default-avatar.png';
+            $rawImg = !empty($driver['profile_image']) ? (string)$driver['profile_image'] : 'img/default-profile.jpg';
             if (strpos($rawImg, 'uploads/') === 0) {
               $imgUrl = BASE_URL . '/' . $rawImg;
               $fsPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $rawImg);
@@ -213,15 +210,15 @@ ob_start();
                 <div class="module-stats mb-3">
                     <div class="d-flex justify-content-between mb-1">
                         <span class="small">Pending:</span>
-                        <span class="badge bg-warning">3</span>
+                        <span class="badge bg-warning" id="pendingAssignmentsCount">0</span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span class="small">Active:</span>
-                        <span class="badge bg-info">1</span>
+                        <span class="badge bg-info" id="activeAssignmentsCount">0</span>
                     </div>
                     <div class="d-flex justify-content-between">
                         <span class="small">Completed:</span>
-                        <span class="badge bg-success">12</span>
+                        <span class="badge bg-success" id="completedAssignmentsCount">0</span>
                     </div>
                 </div>
                 <a href="<?php echo route('trip-assignment'); ?>" class="btn btn-outline-primary btn-sm w-100">
@@ -277,15 +274,15 @@ ob_start();
                 <div class="module-stats mb-3">
                     <div class="d-flex justify-content-between mb-1">
                         <span class="small">Pending Reports:</span>
-                        <span class="badge bg-warning">2</span>
+                        <span class="badge bg-warning" id="pendingReportsCount">0</span>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
                         <span class="small">Submitted:</span>
-                        <span class="badge bg-success">8</span>
+                        <span class="badge bg-success" id="submittedReportsCount">0</span>
                     </div>
                     <div class="d-flex justify-content-between">
                         <span class="small">This Month:</span>
-                        <span class="text-muted">10 reports</span>
+                        <span class="text-muted"><span id="thisMonthReportsCount">0</span> reports</span>
                     </div>
                 </div>
                 <a href="<?php echo route('reports-and-checklist'); ?>" class="btn btn-outline-warning btn-sm w-100">
@@ -323,6 +320,103 @@ ob_start();
                 <button class="btn btn-outline-info btn-sm w-100" data-bs-toggle="modal" data-bs-target="#performanceModal">
                     <i class="fas fa-arrow-right me-1"></i>View Details
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions & Upcoming -->
+<div class="row mb-4">
+    <div class="col-lg-6">
+        <!-- Quick Actions -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-bolt me-2 text-warning"></i>
+                    Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-outline-primary w-100 quick-action-btn" id="qaRequestTrip" data-href="<?php echo route('trip-assignment'); ?>">
+                            <i class="fas fa-plus mb-2"></i><br>
+                            <span>Request Trip</span>
+                        </button>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-outline-success w-100 quick-action-btn" id="qaSubmitReport" data-href="<?php echo route('reports-and-checklist'); ?>">
+                            <i class="fas fa-clipboard-check mb-2"></i><br>
+                            <span>Submit Report</span>
+                        </button>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-outline-info w-100 quick-action-btn" id="qaStartTracking" data-href="<?php echo route('live-tracking'); ?>">
+                            <i class="fas fa-map-marked-alt mb-2"></i><br>
+                            <span>Start Tracking</span>
+                        </button>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <button class="btn btn-outline-warning w-100 quick-action-btn" id="qaEmergency" data-name="<?php echo htmlspecialchars($driver['emergency_contact'] ?? ''); ?>" data-phone="<?php echo htmlspecialchars($driver['emergency_phone'] ?? ''); ?>">
+                            <i class="fas fa-phone mb-2"></i><br>
+                            <span>Emergency</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <!-- Upcoming Trips -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-calendar-alt me-2 text-info"></i>
+                    Upcoming Trips
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="upcoming-trip-item">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <div class="trip-route fw-bold">Manila → Baguio</div>
+                            <div class="trip-time text-muted">
+                                <i class="fas fa-clock me-1"></i>Tomorrow, 6:00 AM
+                            </div>
+                        </div>
+                        <span class="badge bg-primary">Assigned</span>
+                    </div>
+                    <div class="trip-details">
+                        <small class="text-muted">
+                            <i class="fas fa-users me-1"></i>25 passengers •
+                            <i class="fas fa-road me-1"></i>250 km •
+                            <i class="fas fa-peso-sign me-1"></i>₱6,800
+                        </small>
+                    </div>
+                </div>
+                <hr>
+                <div class="upcoming-trip-item">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <div class="trip-route fw-bold">Quezon City → Batangas</div>
+                            <div class="trip-time text-muted">
+                                <i class="fas fa-clock me-1"></i>Aug 20, 2:00 PM
+                            </div>
+                        </div>
+                        <span class="badge bg-warning">Pending</span>
+                    </div>
+                    <div class="trip-details">
+                        <small class="text-muted">
+                            <i class="fas fa-users me-1"></i>18 passengers •
+                            <i class="fas fa-road me-1"></i>120 km •
+                            <i class="fas fa-peso-sign me-1"></i>₱3,200
+                        </small>
+                    </div>
+                </div>
+                <div class="text-center mt-3">
+                    <a href="<?php echo route('trip-assignment'); ?>" class="btn btn-outline-primary btn-sm">View All Trips</a>
+                </div>
             </div>
         </div>
     </div>
@@ -466,103 +560,6 @@ ob_start();
                 </div>
                 <div class="text-center mt-3">
                     <button class="btn btn-outline-primary btn-sm">View All Activity</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Quick Actions & Upcoming -->
-<div class="row">
-    <div class="col-lg-6">
-        <!-- Quick Actions -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-bolt me-2 text-warning"></i>
-                    Quick Actions
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-6 mb-3">
-                        <button class="btn btn-outline-primary w-100 quick-action-btn">
-                            <i class="fas fa-plus mb-2"></i><br>
-                            <span>Request Trip</span>
-                        </button>
-                    </div>
-                    <div class="col-6 mb-3">
-                        <button class="btn btn-outline-success w-100 quick-action-btn">
-                            <i class="fas fa-clipboard-check mb-2"></i><br>
-                            <span>Submit Report</span>
-                        </button>
-                    </div>
-                    <div class="col-6 mb-3">
-                        <button class="btn btn-outline-info w-100 quick-action-btn">
-                            <i class="fas fa-map-marked-alt mb-2"></i><br>
-                            <span>Start Tracking</span>
-                        </button>
-                    </div>
-                    <div class="col-6 mb-3">
-                        <button class="btn btn-outline-warning w-100 quick-action-btn">
-                            <i class="fas fa-phone mb-2"></i><br>
-                            <span>Emergency</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-6">
-        <!-- Upcoming Trips -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white">
-                <h5 class="card-title mb-0">
-                    <i class="fas fa-calendar-alt me-2 text-info"></i>
-                    Upcoming Trips
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="upcoming-trip-item">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <div class="trip-route fw-bold">Manila → Baguio</div>
-                            <div class="trip-time text-muted">
-                                <i class="fas fa-clock me-1"></i>Tomorrow, 6:00 AM
-                            </div>
-                        </div>
-                        <span class="badge bg-primary">Assigned</span>
-                    </div>
-                    <div class="trip-details">
-                        <small class="text-muted">
-                            <i class="fas fa-users me-1"></i>25 passengers •
-                            <i class="fas fa-road me-1"></i>250 km •
-                            <i class="fas fa-peso-sign me-1"></i>₱6,800
-                        </small>
-                    </div>
-                </div>
-                <hr>
-                <div class="upcoming-trip-item">
-                    <div class="d-flex justify-content-between align-items-start mb-2">
-                        <div>
-                            <div class="trip-route fw-bold">Quezon City → Batangas</div>
-                            <div class="trip-time text-muted">
-                                <i class="fas fa-clock me-1"></i>Aug 20, 2:00 PM
-                            </div>
-                        </div>
-                        <span class="badge bg-warning">Pending</span>
-                    </div>
-                    <div class="trip-details">
-                        <small class="text-muted">
-                            <i class="fas fa-users me-1"></i>18 passengers •
-                            <i class="fas fa-road me-1"></i>120 km •
-                            <i class="fas fa-peso-sign me-1"></i>₱3,200
-                        </small>
-                    </div>
-                </div>
-                <div class="text-center mt-3">
-                    <a href="<?php echo route('trip-assignment'); ?>" class="btn btn-outline-primary btn-sm">View All Trips</a>
                 </div>
             </div>
         </div>

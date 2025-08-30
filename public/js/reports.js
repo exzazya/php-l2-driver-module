@@ -496,8 +496,10 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Form element:', document.getElementById('reportForm'));
   };
 
-  // Make submitReport globally available immediately
-  window.submitReport = submitReport;
+  // Make submitReport globally available immediately (guarded)
+  if (typeof submitReport === 'function') {
+    window.submitReport = submitReport;
+  }
   
   // Also expose other functions for debugging
   window.loadCompletedTrips = loadCompletedTrips;
