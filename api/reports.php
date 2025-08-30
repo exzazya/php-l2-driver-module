@@ -45,11 +45,106 @@ try {
                      WHERE t.driver_id = ? 
                        AND t.status = 'completed' 
                        AND t.completed_at IS NOT NULL
+                       AND tr.id IS NULL
                      ORDER BY t.completed_at DESC",
                     [$driverId]
                 );
                 $trips = $stmt ? $stmt->fetchAll() : [];
                 echo generateApiResponse(true, ['trips' => $trips], 'OK');
+            } elseif ($action === 'details') {
+                // Fetch a single report details (including expenses/receipts), restricted to this driver
+                $reportId = (int)($_GET['report_id'] ?? 0);
+                if ($reportId <= 0) {
+                    http_response_code(400);
+                    echo generateApiResponse(false, null, 'report_id is required');
+                    break;
+                }
+
+                // Join report, trip and vehicle. Ensure ownership by submitted_by
+                $stmt = executeQuery(
+                    "SELECT tr.*, t.id as trip_id, t.start_location, t.destination, t.completed_at,
+                            v.plate_number, v.make, v.model
+                     FROM trip_reports tr
+                     JOIN trips t ON t.id = tr.trip_id
+                     JOIN vehicles v ON v.id = t.vehicle_id
+                     WHERE tr.id = ? AND tr.submitted_by = ?",
+                    [$reportId, $driverId]
+                );
+                $row = $stmt ? $stmt->fetch() : null;
+                if (!$row) {
+                    http_response_code(404);
+                    echo generateApiResponse(false, null, 'Report not found');
+                    break;
+                }
+
+                $tripId = (int)($row['trip_id'] ?? 0);
+
+                // Try to load expenses by trip_id (in case expenses were stored in trip_expenses)
+                $expStmt = executeQuery(
+                    'SELECT * FROM trip_expenses WHERE trip_id = ? ORDER BY id DESC LIMIT 1',
+                    [$tripId]
+                );
+                $exp = $expStmt ? ($expStmt->fetch() ?: []) : [];
+
+                // Normalize values: prefer values present in trip_reports (if columns exist), else fall back to trip_expenses
+                $normFuelCost = null;
+                if (array_key_exists('fuel_cost', $row)) { $normFuelCost = $row['fuel_cost']; }
+                elseif (array_key_exists('fuel_cost', $exp)) { $normFuelCost = $exp['fuel_cost']; }
+
+                $normToll = null;
+                if (array_key_exists('toll_fee', $row)) { $normToll = $row['toll_fee']; }
+                elseif (array_key_exists('toll_fee', $exp)) { $normToll = $exp['toll_fee']; }
+                elseif (array_key_exists('toll_fees', $exp)) { $normToll = $exp['toll_fees']; }
+
+                $normParking = null;
+                if (array_key_exists('parking_fee', $row)) { $normParking = $row['parking_fee']; }
+                elseif (array_key_exists('parking_fee', $exp)) { $normParking = $exp['parking_fee']; }
+                elseif (array_key_exists('parking_fees', $exp)) { $normParking = $exp['parking_fees']; }
+
+                $normFuelReceipt = null;
+                if (array_key_exists('fuel_receipt', $row)) { $normFuelReceipt = $row['fuel_receipt']; }
+                elseif (array_key_exists('fuel_receipt', $exp)) { $normFuelReceipt = $exp['fuel_receipt']; }
+
+                $normTollReceipt = null;
+                if (array_key_exists('toll_receipt', $row)) { $normTollReceipt = $row['toll_receipt']; }
+                elseif (array_key_exists('toll_receipt', $exp)) { $normTollReceipt = $exp['toll_receipt']; }
+
+                $normParkingReceipt = null;
+                if (array_key_exists('parking_receipt', $row)) { $normParkingReceipt = $row['parking_receipt']; }
+                elseif (array_key_exists('parking_receipt', $exp)) { $normParkingReceipt = $exp['parking_receipt']; }
+
+                $payload = [
+                    'report' => [
+                        'id' => (int)$row['id'],
+                        'trip_id' => (int)$row['trip_id'],
+                        'fuel_used' => isset($row['fuel_used']) ? (float)$row['fuel_used'] : null,
+                        'incidents' => $row['incidents'] ?? null,
+                        'remarks' => $row['remarks'] ?? null,
+                        'submitted_at' => $row['submitted_at'] ?? null,
+                    ],
+                    'trip' => [
+                        'start_location' => $row['start_location'] ?? null,
+                        'destination' => $row['destination'] ?? null,
+                        'completed_at' => $row['completed_at'] ?? null,
+                    ],
+                    'vehicle' => [
+                        'plate_number' => $row['plate_number'] ?? null,
+                        'make' => $row['make'] ?? null,
+                        'model' => $row['model'] ?? null,
+                    ],
+                    'expenses' => [
+                        'fuel_cost' => $normFuelCost !== null ? (float)$normFuelCost : null,
+                        'toll_fee' => $normToll !== null ? (float)$normToll : null,
+                        'parking_fee' => $normParking !== null ? (float)$normParking : null,
+                        'receipts' => [
+                            'fuel_receipt' => $normFuelReceipt,
+                            'toll_receipt' => $normTollReceipt,
+                            'parking_receipt' => $normParkingReceipt,
+                        ],
+                    ],
+                ];
+
+                echo generateApiResponse(true, $payload, 'OK');
             } else {
                 // Get submitted reports
                 $stmt = executeQuery(
@@ -283,6 +378,19 @@ try {
                     $tripReportsCols = getTableColumns($pdo, 'trip_reports');
                     $tripExpensesCols = getTableColumns($pdo, 'trip_expenses');
 
+                    // Initialize dynamic insert for trip_reports (base fields)
+                    $reportCols = [];
+                    $reportVals = [];
+                    $reportParams = [];
+
+                    if (in_array('trip_id', $tripReportsCols)) { $reportCols[] = 'trip_id'; $reportVals[] = '?'; $reportParams[] = $tripId; }
+                    if (in_array('submitted_by', $tripReportsCols)) { $reportCols[] = 'submitted_by'; $reportVals[] = '?'; $reportParams[] = $driverId; }
+                    if (in_array('fuel_used', $tripReportsCols)) { $reportCols[] = 'fuel_used'; $reportVals[] = '?'; $reportParams[] = $fuelUsed; }
+                    if (in_array('incidents', $tripReportsCols)) { $reportCols[] = 'incidents'; $reportVals[] = '?'; $reportParams[] = $incidents; }
+                    if (in_array('remarks', $tripReportsCols)) { $reportCols[] = 'remarks'; $reportVals[] = '?'; $reportParams[] = $remarks; }
+                    if (in_array('submitted_at', $tripReportsCols)) { $reportCols[] = 'submitted_at'; $reportVals[] = 'NOW()'; }
+
+                    // Determine storage location for expense values/receipts
                     $canStoreInReports = in_array('fuel_cost', $tripReportsCols) || in_array('toll_fee', $tripReportsCols) || in_array('parking_fee', $tripReportsCols)
                         || in_array('fuel_receipt', $tripReportsCols) || in_array('toll_receipt', $tripReportsCols) || in_array('parking_receipt', $tripReportsCols);
 
@@ -290,6 +398,13 @@ try {
 
                     if ($canStoreInReports) {
                         error_log('Reports API - Storing expenses in trip_reports based on available columns');
+                        // Add expense amounts and receipt paths directly into trip_reports if columns exist
+                        if (in_array('fuel_cost', $tripReportsCols)) { $reportCols[] = 'fuel_cost'; $reportVals[] = '?'; $reportParams[] = $fuelCost; }
+                        if (in_array('toll_fee', $tripReportsCols)) { $reportCols[] = 'toll_fee'; $reportVals[] = '?'; $reportParams[] = $tollFee; }
+                        if (in_array('parking_fee', $tripReportsCols)) { $reportCols[] = 'parking_fee'; $reportVals[] = '?'; $reportParams[] = $parkingFee; }
+                        if (in_array('fuel_receipt', $tripReportsCols)) { $reportCols[] = 'fuel_receipt'; $reportVals[] = '?'; $reportParams[] = $receiptPaths['fuel_receipt'] ?? null; }
+                        if (in_array('toll_receipt', $tripReportsCols)) { $reportCols[] = 'toll_receipt'; $reportVals[] = '?'; $reportParams[] = $receiptPaths['toll_receipt'] ?? null; }
+                        if (in_array('parking_receipt', $tripReportsCols)) { $reportCols[] = 'parking_receipt'; $reportVals[] = '?'; $reportParams[] = $receiptPaths['parking_receipt'] ?? null; }
                     } else {
                         // Prepare dynamic columns for trip_expenses
                         $colFuelCost = in_array('fuel_cost', $tripExpensesCols) ? 'fuel_cost' : null;
@@ -323,33 +438,9 @@ try {
                             throw new Exception('Failed to insert trip expenses');
                         }
                         $expenseId = $pdo->lastInsertId();
-                        error_log('Reports API - trip_expenses inserted with ID: ' . $expenseId);
                     }
 
-                    // Log data before trip_reports insertion
-                    error_log('Reports API - About to insert trip_reports with data: ' . json_encode([
-                        'trip_id' => $tripId,
-                        'fuel_used' => $fuelUsed,
-                        'incidents' => $incidents,
-                        'remarks' => $remarks,
-                        'submitted_by' => $driverId
-                    ]));
-
-                    // Insert trip report with dynamic optional expense fields if available
-                    $reportCols = ['trip_id', 'fuel_used', 'incidents', 'remarks', 'submitted_by', 'submitted_at'];
-                    $reportVals = ['?', '?', '?', '?', '?', 'NOW()'];
-                    $reportParams = [$tripId, $fuelUsed, $incidents, $remarks, $driverId];
-
-                    if ($canStoreInReports) {
-                        if (in_array('fuel_cost', $tripReportsCols)) { $reportCols[] = 'fuel_cost'; $reportVals[] = '?'; $reportParams[] = $fuelCost; }
-                        if (in_array('toll_fee', $tripReportsCols)) { $reportCols[] = 'toll_fee'; $reportVals[] = '?'; $reportParams[] = $tollFee; }
-                        if (in_array('parking_fee', $tripReportsCols)) { $reportCols[] = 'parking_fee'; $reportVals[] = '?'; $reportParams[] = $parkingFee; }
-                        if (in_array('fuel_receipt', $tripReportsCols)) { $reportCols[] = 'fuel_receipt'; $reportVals[] = '?'; $reportParams[] = $receiptPaths['fuel_receipt'] ?? null; }
-                        if (in_array('toll_receipt', $tripReportsCols)) { $reportCols[] = 'toll_receipt'; $reportVals[] = '?'; $reportParams[] = $receiptPaths['toll_receipt'] ?? null; }
-                        if (in_array('parking_receipt', $tripReportsCols)) { $reportCols[] = 'parking_receipt'; $reportVals[] = '?'; $reportParams[] = $receiptPaths['parking_receipt'] ?? null; }
-                        error_log('Reports API - Storing expense fields in trip_reports');
-                    }
-
+                    // Build and execute trip_reports insert
                     $reportSql = 'INSERT INTO trip_reports (' . implode(', ', $reportCols) . ') VALUES (' . implode(', ', $reportVals) . ')';
                     error_log('Reports API - trip_reports INSERT SQL: ' . $reportSql . ' params: ' . json_encode($reportParams));
 

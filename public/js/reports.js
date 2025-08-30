@@ -157,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countBadge = document.getElementById('submittedReportsCount');
     
     if (!reports.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No submitted reports available</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No submitted reports available</td></tr>';
       countBadge.textContent = '0';
       return;
     }
@@ -179,7 +179,24 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="text-truncate" style="max-width: 150px;" title="${escapeHtml(incidents)}">${escapeHtml(incidents)}</td>
         <td class="text-truncate" style="max-width: 150px;" title="${escapeHtml(remarks)}">${escapeHtml(remarks)}</td>
         <td>${escapeHtml(submittedDate)}</td>
+        <td>
+          <button class="btn btn-outline-primary btn-sm view-report-btn" 
+                  data-report-id="${report.id}" 
+                  data-bs-toggle="modal" 
+                  data-bs-target="#reportDetailsModal">
+            <i class="fas fa-eye me-1"></i>View
+          </button>
+        </td>
       `;
+
+      // Attach view handler
+      const viewBtn = row.querySelector('.view-report-btn');
+      if (viewBtn) {
+        viewBtn.addEventListener('click', (e) => {
+          const id = e.currentTarget.getAttribute('data-report-id');
+          loadReportDetails(id);
+        });
+      }
 
       tbody.appendChild(row);
     });
@@ -329,6 +346,137 @@ document.addEventListener('DOMContentLoaded', () => {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  async function loadReportDetails(reportId) {
+    // Set loading state
+    const content = document.getElementById('reportDetailsContent');
+    const titleEl = document.getElementById('reportDetailsModalLabel');
+    if (content) {
+      content.innerHTML = `
+        <div class="text-center text-muted py-5">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <div>Loading...</div>
+        </div>`;
+    }
+
+    try {
+      const response = await fetch(`api/reports.php?action=details&report_id=${encodeURIComponent(reportId)}`, {
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load report details');
+      }
+
+      renderReportDetails(data.data);
+
+      if (titleEl && data.data?.report?.id != null) {
+        const rid = `#R${String(data.data.report.id).padStart(3, '0')}`;
+        const tid = data.data?.report?.trip_id != null ? `#TRIP${String(data.data.report.trip_id).padStart(3, '0')}` : '';
+        titleEl.textContent = `Report Details — ${rid}${tid ? ' • ' + tid : ''}`;
+      }
+    } catch (err) {
+      console.error('Error loading report details:', err);
+      if (content) {
+        content.innerHTML = `<div class="alert alert-danger" role="alert">${escapeHtml(err.message || 'Failed to load report details')}</div>`;
+      }
+    }
+  }
+
+  function renderReportDetails(payload) {
+    const content = document.getElementById('reportDetailsContent');
+    if (!content) return;
+
+    const rep = payload?.report || {};
+    const trip = payload?.trip || {};
+    const veh = payload?.vehicle || {};
+    const exp = payload?.expenses || {};
+    const receipts = exp?.receipts || {};
+
+    const rid = rep?.id != null ? `#R${String(rep.id).padStart(3, '0')}` : '';
+    const tid = rep?.trip_id != null ? `#TRIP${String(rep.trip_id).padStart(3, '0')}` : '';
+
+    const fmt = (v, fallback = 'N/A') => (v === null || v === undefined || v === '' ? fallback : v);
+
+    const chip = (label, value) => `
+      <div class="me-2 mb-2 badge bg-light text-dark border">
+        <span class="text-muted">${escapeHtml(label)}:</span>
+        <span class="ms-1 fw-semibold">${escapeHtml(String(value))}</span>
+      </div>`;
+
+    const receiptItems = [];
+    if (receipts.fuel_receipt) receiptItems.push({ label: 'Fuel Receipt', path: receipts.fuel_receipt });
+    if (receipts.toll_receipt) receiptItems.push({ label: 'Toll Receipt', path: receipts.toll_receipt });
+    if (receipts.parking_receipt) receiptItems.push({ label: 'Parking Receipt', path: receipts.parking_receipt });
+
+    const toPublic = (p) => {
+      if (!p) return '';
+      const s = String(p);
+      if (/^(?:https?:)?\/\//i.test(s) || /^data:/i.test(s)) return s;
+      return (window.publicUrl ? window.publicUrl(s) : s);
+    };
+
+    const receiptsGrid = receiptItems.length
+      ? `
+        <div class="row row-cols-2 row-cols-md-3 g-2">
+          ${receiptItems.map(r => `
+            <div class="col">
+              <div class="card h-100">
+                <a href="${escapeHtml(toPublic(r.path))}" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                  <img src="${escapeHtml(toPublic(r.path))}" class="card-img-top img-fluid" alt="${escapeHtml(r.label)}" style="object-fit: cover; max-height: 180px;">
+                </a>
+                <div class="card-body py-2">
+                  <div class="small text-muted">${escapeHtml(r.label)}</div>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>`
+      : '<div class="text-muted">No receipt images uploaded</div>';
+
+    content.innerHTML = `
+      <div class="container-fluid">
+        <div class="mb-3">
+          ${rid ? chip('Report', rid) : ''}
+          ${tid ? chip('Trip', tid) : ''}
+          ${veh.plate_number ? chip('Plate', veh.plate_number) : ''}
+          ${veh.make ? chip('Make', veh.make) : ''}
+          ${veh.model ? chip('Model', veh.model) : ''}
+        </div>
+
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <div class="card h-100">
+              <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-route me-2"></i>Trip</h6></div>
+              <div class="card-body">
+                <div class="mb-2"><strong>Route:</strong> ${escapeHtml(fmt(trip.start_location, ''))} ${trip.start_location || trip.destination ? '&rarr;' : ''} ${escapeHtml(fmt(trip.destination, ''))}</div>
+                <div class="mb-2"><strong>Date Completed:</strong> ${escapeHtml(formatDate(trip.completed_at))}</div>
+                <div class="mb-2"><strong>Submitted:</strong> ${escapeHtml(formatDate(rep.submitted_at))}</div>
+                <div class="mb-2"><strong>Fuel Used:</strong> ${escapeHtml(rep.fuel_used != null ? `${rep.fuel_used} L` : 'N/A')}</div>
+                <div class="mb-2"><strong>Incidents:</strong><div class="text-prewrap">${escapeHtml(fmt(rep.incidents, 'None'))}</div></div>
+                <div class="mb-2"><strong>Remarks:</strong><div class="text-prewrap">${escapeHtml(fmt(rep.remarks, 'N/A'))}</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="card h-100">
+              <div class="card-header py-2"><h6 class="mb-0"><i class="fas fa-receipt me-2"></i>Expenses</h6></div>
+              <div class="card-body">
+                <div class="mb-2"><strong>Fuel Cost:</strong> ${escapeHtml(exp.fuel_cost != null ? `₱${Number(exp.fuel_cost).toFixed(2)}` : 'N/A')}</div>
+                <div class="mb-2"><strong>Toll Fee:</strong> ${escapeHtml(exp.toll_fee != null ? `₱${Number(exp.toll_fee).toFixed(2)}` : 'N/A')}</div>
+                <div class="mb-2"><strong>Parking Fee:</strong> ${escapeHtml(exp.parking_fee != null ? `₱${Number(exp.parking_fee).toFixed(2)}` : 'N/A')}</div>
+                <div class="mt-3">
+                  <strong>Receipts:</strong>
+                  <div class="mt-2">${receiptsGrid}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   function showError(message) {

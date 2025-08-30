@@ -192,6 +192,26 @@ ob_start();
   </div>
 </div>
 
+<!-- Report Details Modal -->
+<div class="modal fade" id="reportDetailsModal" tabindex="-1" aria-labelledby="reportDetailsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-fullscreen-sm-down modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="reportDetailsModalLabel">Report Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="reportDetailsContent">
+          <div class="text-center text-muted py-5">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <div>Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Completed Trips Table -->
 <div class="card main-card mb-4">
   <div class="card-header">
@@ -242,11 +262,12 @@ ob_start();
             <th>Incidents</th>
             <th>Remarks</th>
             <th>Date Submitted</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td colspan="6" class="text-center text-muted">Loading submitted reports...</td>
+            <td colspan="7" class="text-center text-muted">Loading submitted reports...</td>
           </tr>
         </tbody>
       </table>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/x-icon" href="<?php echo asset('../img/jetlouge_logo.png'); ?>">
+  <link rel="icon" type="image/x-icon" href="<?php echo asset('img/jetlouge_logo.png'); ?>">
   <title>Jetlouge Travels - <?php echo $title ?? 'Driver Dashboard'; ?></title>
 
   <!-- Bootstrap CSS -->
@@ -16,6 +16,20 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
 
   <link rel="stylesheet" href="<?php echo asset('css/dash-style-fixed.css'); ?>">
+
+  <script>
+    window.BASE_URL = <?php echo json_encode(BASE_URL); ?>;
+    window.publicUrl = function(path) {
+      if (!path) return '';
+      var p = String(path).replace(/^\/+/, '');
+      return window.BASE_URL + '/' + p;
+    };
+    window.assetUrl = function(path) {
+      if (!path) return '';
+      var p = String(path).replace(/^\/+/, '');
+      return window.BASE_URL + '/public/' + p;
+    };
+  </script>
 
   <!-- Page-specific styles -->
   <?php echo $styles ?? ''; ?>
