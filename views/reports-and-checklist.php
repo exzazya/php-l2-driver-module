@@ -182,7 +182,7 @@ ob_start();
   <div class="d-flex justify-content-between align-items-center page-header">
     <div class="d-flex align-items-center">
       <div class="dashboard-logo me-3">
-        <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels" class="logo-img">
+        <img src="<?php echo asset('img/jetlouge_logo.webp'); ?>" alt="Jetlouge Travels" class="logo-img">
       </div>
       <div>
         <h2 class="fw-bold mb-1">Reports and Checklist</h2>

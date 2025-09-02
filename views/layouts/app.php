@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/x-icon" href="<?php echo asset('img/jetlouge_logo.png'); ?>">
+  <link rel="icon" type="image/x-icon" href="<?php echo asset('img/jetlouge_logo.webp'); ?>">
   <title>Jetlouge Travels - <?php echo $title ?? 'Driver Dashboard'; ?></title>
 
   <!-- Bootstrap CSS -->

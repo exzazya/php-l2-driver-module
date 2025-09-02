@@ -76,7 +76,7 @@ if ($row['status'] === 'active') {
 
         <div class="logo-container">
           <div class="logo-box">
-          <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels">
+          <img src="<?php echo asset('img/jetlouge_logo.webp'); ?>" alt="Jetlouge Travels">
           </div>
           <h1 class="brand-text">Jetlouge Travels</h1>
           <p class="brand-subtitle">Logistics Driver Portal</p>
