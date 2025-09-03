@@ -1,7 +1,11 @@
 <?php
 // Authentication functions for Jetlouge Travels Driver Module (Driver-only login)
 require_once 'database.php';
-session_start();
+
+// Only start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Provide getallheaders() for non-Apache environments (e.g., some Windows/IIS setups)
 if (!function_exists('getallheaders')) {

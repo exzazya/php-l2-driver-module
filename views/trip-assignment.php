@@ -1,6 +1,9 @@
 <?php
 $title = "Trip Assignment";
-session_start();
+// Only start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 if (!isset($_SESSION['driver_id'])) {
     header("Location: index.php"); // redirect if not logged in

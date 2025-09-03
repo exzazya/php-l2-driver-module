@@ -1,5 +1,8 @@
 <?php
-session_start();
+// Only start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require 'db_connect.php'; // make sure this connects to your logi_L2 DB
 
 // If already logged in, redirect
