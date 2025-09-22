@@ -50,6 +50,8 @@ function route($name, $params = []) {
         'reports-and-checklist' => '/reports-and-checklist',
         'profile-upload' => '/profile-upload',
         'logout' => '/logout',
+        'twofa' => '/auth/2fa',
+        'account-security' => '/account/security',
     ];
     
     $path = $routes[$name] ?? '/';
@@ -74,6 +76,7 @@ function request() {
                 'live-tracking' => '/live-tracking',
                 'trip-assignment' => '/trip-assignment',
                 'reports-and-checklist' => '/reports-and-checklist',
+                'account-security' => '/account/security',
             ];
             
             return isset($routes[$routeName]) && $routes[$routeName] === $this->route;
@@ -98,9 +101,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $route === '/') {
         $loginError = 'Database connection error. Please try again later.';
         $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
     } elseif (login($username, $password)) {
-        // Send explicitly to dashboard via query-string route to avoid DirectoryIndex dependency
-        header('Location: ' . route('dashboard'));
-        exit();
+        // If 2FA is staged, send to the verification route; otherwise go to dashboard
+        if (!empty($_SESSION['2fa_pending_driver'])) {
+            header('Location: ' . route('twofa'));
+            exit();
+        } else {
+            header('Location: ' . route('dashboard'));
+            exit();
+        }
     } else {
         $loginError = 'Invalid username or password';
         $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
@@ -116,6 +124,113 @@ switch ($route) {
             exit();
         }
         include 'views/login.php';
+        break;
+    case '/account/security':
+        require_once 'includes/auth.php';
+        require_once 'includes/database.php';
+        requireLogin();
+        $driverId = $_SESSION['driver_id'] ?? 0;
+        $dbDriver = $driverId ? getDriverById((int)$driverId) : false;
+        if (!$dbDriver) { $_SESSION['flash_error'] = 'Driver account not found or inactive.'; header('Location: ' . route('dashboard')); exit; }
+
+        $twofaEnabled = (int)($dbDriver['twofa_enabled'] ?? 0) === 1;
+        $twofaMethod  = (string)($dbDriver['twofa_method'] ?? 'email');
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $action = $_POST['action'] ?? '';
+            if ($action === 'start_2fa_email') {
+                try { maybeSendDriverEmailOtp($dbDriver, true); } catch (Exception $e) {}
+                $_SESSION['2fa_email_setup'] = true;
+                $_SESSION['flash_info'] = 'We sent a verification code to your email. Enter it to enable 2FA.';
+                header('Location: ' . route('account-security'));
+                exit;
+            } elseif ($action === 'resend_2fa_email') {
+                try { maybeSendDriverEmailOtp($dbDriver, false); } catch (Exception $e) {}
+                // Preserve password form data for password change flow
+                if (!empty($_POST['current_password']) || !empty($_POST['new_password']) || !empty($_POST['confirm_password'])) {
+                    $_SESSION['password_form_data'] = [
+                        'current_password' => $_POST['current_password'] ?? '',
+                        'new_password' => $_POST['new_password'] ?? '',
+                        'confirm_password' => $_POST['confirm_password'] ?? ''
+                    ];
+                }
+                $_SESSION['flash_info'] = 'We resent the verification code to your email.';
+                header('Location: ' . route('account-security'));
+                exit;
+            } elseif ($action === 'confirm_2fa_email') {
+                $otp = isset($_POST['otp']) ? preg_replace('/\D+/', '', $_POST['otp']) : '';
+                if ($otp !== '' && verifyDriverEmailOtp((int)$driverId, $otp)) {
+                    setDriverTwoFactor((int)$driverId, 1, null);
+                    setDriverTwoFactorMethod((int)$driverId, 'email');
+                    unset($_SESSION['2fa_email_setup']);
+                    $_SESSION['flash_success'] = 'Two-factor authentication (Email) enabled.';
+                } else {
+                    $_SESSION['flash_error'] = 'Invalid verification code.';
+                }
+                header('Location: ' . route('account-security'));
+                exit;
+            } elseif ($action === 'disable_2fa_email') {
+                $otp = isset($_POST['otp']) ? preg_replace('/\D+/', '', $_POST['otp']) : '';
+                if ($otp !== '' && verifyDriverEmailOtp((int)$driverId, $otp)) {
+                    setDriverTwoFactor((int)$driverId, 0, null);
+                    $_SESSION['flash_success'] = 'Two-factor authentication disabled.';
+                } else {
+                    $_SESSION['flash_error'] = 'Invalid code. 2FA not disabled.';
+                }
+                header('Location: ' . route('account-security'));
+                exit;
+            } elseif ($action === 'change_password') {
+                $current = (string)($_POST['current_password'] ?? '');
+                $new = (string)($_POST['new_password'] ?? '');
+                $confirm = (string)($_POST['confirm_password'] ?? '');
+                $otp = isset($_POST['otp']) ? preg_replace('/\D+/', '', $_POST['otp']) : '';
+                if ($new === '' || strlen($new) < 8) { $_SESSION['flash_error'] = 'New password must be at least 8 characters.'; header('Location: ' . route('account-security')); exit; }
+                if ($new !== $confirm) { $_SESSION['flash_error'] = 'New password confirmation does not match.'; header('Location: ' . route('account-security')); exit; }
+                if (!passwordMatches($dbDriver, $current, false)) { $_SESSION['flash_error'] = 'Current password is incorrect.'; header('Location: ' . route('account-security')); exit; }
+                if ($twofaEnabled) {
+                    if ($otp === '' || !verifyDriverEmailOtp((int)$driverId, $otp)) {
+                        $_SESSION['flash_error'] = 'Invalid or missing authentication code.'; header('Location: ' . route('account-security')); exit;
+                    }
+                }
+                $hash = password_hash($new, PASSWORD_DEFAULT);
+                updateDriverPasswordHash((int)$driverId, $hash);
+                $_SESSION['flash_success'] = 'Password updated successfully.';
+                header('Location: ' . route('account-security'));
+                exit;
+            }
+        }
+        include 'views/account/security.php';
+        break;
+    case '/auth/2fa':
+        require_once 'includes/auth.php';
+        // Require a staged driver pending record
+        if (empty($_SESSION['2fa_pending_driver']) || empty($_SESSION['2fa_pending_driver']['driver_id'])) {
+            header('Location: ' . route('login'));
+            exit();
+        }
+        $pending = $_SESSION['2fa_pending_driver'];
+        $twofaMasked = $pending['email_mask'] ?? '';
+        $twofaMethod = 'email';
+        $twofaError = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $action = $_POST['action'] ?? '';
+            if ($action === 'resend') {
+                $drv = getDriverById((int)$pending['driver_id']);
+                if ($drv) { try { maybeSendDriverEmailOtp($drv, false); } catch (Exception $e) {} }
+            } else {
+                $otp = isset($_POST['otp']) ? preg_replace('/\D+/', '', $_POST['otp']) : '';
+                if ($otp !== '' && verifyDriverEmailOtp((int)$pending['driver_id'], $otp)) {
+                    $drv = getDriverById((int)$pending['driver_id']);
+                    if ($drv) { establishDriverSession($drv); }
+                    unset($_SESSION['2fa_pending_driver'], $_SESSION['2fa_method']);
+                    header('Location: ' . route('dashboard'));
+                    exit();
+                } else {
+                    $twofaError = 'Invalid verification code.';
+                }
+            }
+        }
+        include 'views/auth/2fa.php';
         break;
         
     case '/dashboard':

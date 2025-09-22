@@ -74,6 +74,15 @@ function getDriverByEmail($email) {
     return $stmt ? $stmt->fetch() : false;
 }
 
+function getDriverById($id) {
+    $stmt = executeQuery("SELECT * FROM drivers WHERE id = ?", [(int)$id]);
+    return $stmt ? $stmt->fetch() : false;
+}
+
+function updateDriverLastLogin($driverId) {
+    return executeQuery("UPDATE drivers SET last_login = NOW() WHERE id = ?", [(int)$driverId]);
+}
+
 function getUserByCredentials($identifier) {
     // Try admin first
     $admin = getAdminByUsername($identifier);
@@ -136,5 +145,59 @@ function setDriverPasswordByEmail($email, $plainPassword) {
 function setDriverPasswordById($driverId, $plainPassword) {
     $hash = password_hash($plainPassword, PASSWORD_DEFAULT);
     return updateDriverPasswordHash($driverId, $hash);
+}
+
+// ==============================
+// Driver Email 2FA (OTP) helpers
+// ==============================
+
+function upsertDriverEmailOtpCode($driverId, $codeHash, $expiresAt) {
+    return executeQuery(
+        "INSERT INTO twofactor_email_codes_driver (driver_id, code_hash, expires_at, attempts, sent_at)
+         VALUES (?, ?, ?, 0, NOW())
+         ON DUPLICATE KEY UPDATE code_hash = VALUES(code_hash), expires_at = VALUES(expires_at), attempts = 0, sent_at = NOW()",
+        [(int)$driverId, $codeHash, $expiresAt]
+    );
+}
+
+function getDriverEmailOtpRecord($driverId) {
+    $stmt = executeQuery(
+        "SELECT * FROM twofactor_email_codes_driver WHERE driver_id = ?",
+        [(int)$driverId]
+    );
+    return $stmt ? $stmt->fetch() : false;
+}
+
+function incrementDriverEmailOtpAttempts($driverId) {
+    return executeQuery(
+        "UPDATE twofactor_email_codes_driver SET attempts = attempts + 1 WHERE driver_id = ?",
+        [(int)$driverId]
+    );
+}
+
+function deleteDriverEmailOtpRecord($driverId) {
+    return executeQuery(
+        "DELETE FROM twofactor_email_codes_driver WHERE driver_id = ?",
+        [(int)$driverId]
+    );
+}
+
+// ==============================
+// Driver Two-Factor flags
+// ==============================
+
+function setDriverTwoFactor($driverId, $enabled, $secret = null) {
+    return executeQuery(
+        "UPDATE drivers SET twofa_enabled = ?, twofa_secret = ? WHERE id = ?",
+        [(int)$enabled, $secret, (int)$driverId]
+    );
+}
+
+function setDriverTwoFactorMethod($driverId, $method) {
+    $method = in_array($method, ['email','totp'], true) ? $method : 'email';
+    return executeQuery(
+        "UPDATE drivers SET twofa_method = ? WHERE id = ?",
+        [$method, (int)$driverId]
+    );
 }
 

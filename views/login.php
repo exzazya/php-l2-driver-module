@@ -1,61 +1,4 @@
-<?php
-// Only start session if not already started
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-require 'db_connect.php'; // make sure this connects to your logi_L2 DB
-
-// If already logged in, redirect
-if (isset($_SESSION['driver_id'])) {
-    header("Location: dashboard.php");
-    exit;
-}
-
-$loginError = '';
-
-// If form submitted
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['username']); // your form calls it "username" but in DB it's email
-    $password = trim($_POST['password']);
-
-    $stmt = $conn->prepare("SELECT id, name, email, password_hash, status FROM drivers WHERE email = ?");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if ($row = $result->fetch_assoc()) {
-        if (password_verify($password, $row['password_hash'])) {
-if ($row['status'] === 'active') {
-    // Store session in PHP
-    $_SESSION['driver_id'] = $row['id'];
-    $_SESSION['driver_name'] = $row['name'];
-    $_SESSION['driver_email'] = $row['email'];
-
-    // --- Insert into driver_sessions ---
-    $session_id = session_id(); // PHP's session id
-    $driver_id = $row['id'];
-    $ip_address = $_SERVER['REMOTE_ADDR'] ?? null;
-    $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? null;
-
-    $stmt2 = $conn->prepare("INSERT INTO driver_sessions (id, driver_id, ip_address, user_agent, last_activity) 
-                             VALUES (?, ?, ?, ?, NOW())");
-    $stmt2->bind_param("siss", $session_id, $driver_id, $ip_address, $user_agent);
-    $stmt2->execute();
-
-    // Redirect to dashboard
-    header("Location: dashboard.php");
-    exit;
-} else {
-                $loginError = "Your account is not active.";
-            }
-        } else {
-            $loginError = "Invalid email or password.";
-        }
-    } else {
-        $loginError = "Invalid email or password.";
-    }
-}
-?>
+<?php if (session_status() === PHP_SESSION_NONE) { session_start(); } ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -94,13 +37,13 @@ if ($row['status'] === 'active') {
 
         <form id="loginForm" method="POST" action="">
           <div class="mb-3">
-            <label for="email" class="form-label fw-semibold">Username or Email</label>
+            <label for="email" class="form-label fw-semibold">Email</label>
             <div class="input-group">
               <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-              <input type="text" class="form-control" id="email" name="username" placeholder="Enter driver username or email" required>
+              <input type="text" class="form-control" id="email" name="username" placeholder="Enter your email" value="<?php echo isset($oldUsername) ? $oldUsername : ''; ?>" required>
             </div>
               <small class="form-text text-muted">
-                Only drivers can sign in. Use your admin username or email.              
+                Only drivers can sign in.
               </small>
           </div>
 

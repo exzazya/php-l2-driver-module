@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" type="image/x-icon" href="<?php echo asset('img/jetlouge_logo.webp'); ?>">
+  <link rel="icon" type="image/webp" href="<?php echo asset('img/jetlouge_logo.webp'); ?>">
   <title>Jetlouge Travels - <?php echo $title ?? 'Driver Dashboard'; ?></title>
 
   <!-- Bootstrap CSS -->
@@ -153,6 +153,11 @@
         <li class="nav-item">
             <a href="<?php echo route('reports-and-checklist'); ?>" class="nav-link text-dark <?php echo request()->routeIs('reports-and-checklist') ? 'active' : ''; ?>">
                 <i class="bi bi-clipboard-check me-2"></i> Reports and Checklist
+            </a>
+        </li>
+        <li class="nav-item">
+            <a href="<?php echo route('account-security'); ?>" class="nav-link text-dark <?php echo request()->routeIs('account-security') ? 'active' : ''; ?>">
+                <i class="bi bi-shield-lock me-2"></i> Account Security
             </a>
         </li>
         <li class="nav-item mt-3">
