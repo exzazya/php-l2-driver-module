@@ -11,9 +11,10 @@
   <title>Two-Factor Authentication - Driver Portal</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="<?php echo asset('css/login.css'); ?>">
   <style>
     body { 
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--jetlouge-primary) 0%, var(--jetlouge-secondary) 100%);
       min-height: 100vh;
       display: flex;
       align-items: center;
@@ -43,7 +44,7 @@
       box-shadow: 0 6px 15px rgba(0,0,0,0.1);
     }
     .twofa-title {
-      color: #2563eb;
+      color: var(--jetlouge-primary);
       font-size: 1.5rem;
       font-weight: 700;
       margin: 15px 0 8px 0;
@@ -55,7 +56,7 @@
       line-height: 1.4;
     }
     .form-label {
-      color: #374151;
+      color: var(--jetlouge-primary);
       font-weight: 600;
       font-size: 0.95rem;
       margin-bottom: 8px;
@@ -72,8 +73,8 @@
       background: #f9fafb;
     }
     .form-control:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      border-color: var(--jetlouge-primary);
+      box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.15);
       background: white;
     }
     .form-text {
@@ -82,22 +83,22 @@
       margin-top: 8px;
     }
     .btn-primary {
-      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      background: linear-gradient(135deg, var(--jetlouge-primary) 0%, var(--jetlouge-secondary) 100%);
       border: none;
       border-radius: 10px;
       padding: 12px 25px;
       font-weight: 600;
       font-size: 0.95rem;
       transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+      box-shadow: 0 4px 15px rgba(30, 58, 138, 0.3);
     }
     .btn-primary:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(37, 99, 235, 0.4);
+      box-shadow: 0 8px 25px rgba(30, 58, 138, 0.45);
     }
     .btn-outline-secondary {
       border: 2px solid #e5e7eb;
-      color: #6b7280;
+      color: var(--jetlouge-primary);
       border-radius: 10px;
       padding: 10px 20px;
       font-weight: 500;
@@ -106,9 +107,9 @@
       background: transparent;
     }
     .btn-outline-secondary:hover {
-      background: #f3f4f6;
-      border-color: #d1d5db;
-      color: #374151;
+      background: var(--jetlouge-light);
+      border-color: var(--jetlouge-primary);
+      color: var(--jetlouge-primary);
     }
     .alert-danger {
       background: #fef2f2;

@@ -52,6 +52,8 @@ function route($name, $params = []) {
         'logout' => '/logout',
         'twofa' => '/auth/2fa',
         'account-security' => '/account/security',
+        'forgot-password' => '/auth/forgot-password',
+        'reset-password' => '/auth/reset-password',
     ];
     
     $path = $routes[$name] ?? '/';
@@ -244,6 +246,69 @@ switch ($route) {
             }
         }
         include 'views/auth/2fa.php';
+        break;
+    case '/auth/forgot-password':
+        require_once 'includes/auth.php';
+        require_once 'includes/database.php';
+        if (isLoggedIn()) { header('Location: ' . route('dashboard')); exit(); }
+        $fpError = null;
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $email = isset($_POST['email']) ? trim((string)$_POST['email']) : '';
+            if ($email === '') {
+                $fpError = 'Please enter your email.';
+            } else {
+                $drv = getDriverByEmail($email);
+                if (!$drv) {
+                    $fpError = 'We could not find a driver account with that email.';
+                } else {
+                    try { maybeSendDriverEmailOtp($drv, true); } catch (Exception $e) {}
+                    $_SESSION['pwd_reset_pending_driver'] = [
+                        'driver_id' => (int)$drv['id'],
+                        'email_mask' => maskEmail((string)$drv['email']),
+                    ];
+                    header('Location: ' . route('reset-password'));
+                    exit();
+                }
+            }
+        }
+        include 'views/auth/forgot-password.php';
+        break;
+    case '/auth/reset-password':
+        require_once 'includes/auth.php';
+        require_once 'includes/database.php';
+        if (isLoggedIn()) { header('Location: ' . route('dashboard')); exit(); }
+        $pending = $_SESSION['pwd_reset_pending_driver'] ?? null;
+        if (!$pending || empty($pending['driver_id'])) { header('Location: ' . route('forgot-password')); exit(); }
+        $rpError = null;
+        $maskedEmail = $pending['email_mask'] ?? '';
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $action = $_POST['action'] ?? '';
+            if ($action === 'resend') {
+                $drv = getDriverById((int)$pending['driver_id']);
+                if ($drv) { try { maybeSendDriverEmailOtp($drv, true); } catch (Exception $e) {} }
+                header('Location: ' . route('reset-password'));
+                exit();
+            }
+            $otp = isset($_POST['otp']) ? preg_replace('/\D+/', '', (string)$_POST['otp']) : '';
+            $new = (string)($_POST['new_password'] ?? '');
+            $confirm = (string)($_POST['confirm_password'] ?? '');
+            if ($otp === '') { $rpError = 'Enter the code we sent to your email.'; }
+            elseif (strlen($new) < 8) { $rpError = 'New password must be at least 8 characters.'; }
+            elseif ($new !== $confirm) { $rpError = 'Password confirmation does not match.'; }
+            else {
+                if (verifyDriverEmailOtp((int)$pending['driver_id'], $otp)) {
+                    $hash = password_hash($new, PASSWORD_DEFAULT);
+                    updateDriverPasswordHash((int)$pending['driver_id'], $hash);
+                    unset($_SESSION['pwd_reset_pending_driver']);
+                    $_SESSION['flash_success'] = 'Your password has been reset. You can now sign in.';
+                    header('Location: ' . route('login'));
+                    exit();
+                } else {
+                    $rpError = 'Invalid verification code.';
+                }
+            }
+        }
+        include 'views/auth/reset-password.php';
         break;
         
     case '/dashboard':

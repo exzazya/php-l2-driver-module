@@ -77,7 +77,7 @@
           </button>
 
           <div class="text-center">
-              <a href="#" class="btn-forgot">Forgot your password?</a>
+              <a href="<?php echo route('forgot-password'); ?>" class="btn-forgot">Forgot your password?</a>
           </div>
           </form>
           </div>
