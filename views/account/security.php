@@ -3,6 +3,17 @@ $title = "Account Security";
 
 ob_start();
 ?>
+<div class="page-header-container mb-4">
+  <div class="d-flex align-items-center">
+    <div class="dashboard-logo me-3">
+      <img src="<?php echo asset('img/jetlouge_logo.webp'); ?>" class="logo-img" alt>
+    </div>
+    <div>
+      <h2 class="fw-bold mb-1">Account Security</h2>
+      <p class="text-muted mb-0">Two-Factor Authentication and Password</p>
+    </div>
+  </div>
+</div>
 <div class="container py-3">
   <div class="row g-3">
     <div class="col-12 col-lg-6">

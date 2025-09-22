@@ -55,7 +55,11 @@ function route($name, $params = []) {
     ];
     
     $path = $routes[$name] ?? '/';
-    // Use query-string routing to avoid dependency on mod_rewrite
+    // For the root path, return index.php with query-string routing to ensure compatibility
+    if ($path === '/') {
+        return url('/?route=/');
+    }
+    // Use query-string routing to avoid dependency on mod_rewrite for non-root paths
     $qs = '/?route=' . ltrim($path, '/');
     return url($qs);
 }
