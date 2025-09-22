@@ -35,7 +35,14 @@
           Sign In to Your Account
         </h3>
 
-        <form id="loginForm" method="POST" action="">
+        <?php if (isset($loginError)): ?>
+          <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <?php echo htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8'); ?>
+          </div>
+        <?php endif; ?>
+
+        <form id="loginForm" method="POST" action="<?php echo htmlspecialchars($_SERVER['REQUEST_URI'], ENT_QUOTES, 'UTF-8'); ?>">
           <div class="mb-3">
             <label for="email" class="form-label fw-semibold">Email</label>
             <div class="input-group">
@@ -74,13 +81,6 @@
           </div>
           </form>
           </div>
-
-          <?php if (!empty($loginError)): ?>
-            <div class="alert alert-danger text-center" role="alert">
-              <?php echo htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8'); ?>
-            </div>
-          <?php endif; ?>
-        </form>
       </div>
     </div>
   </div>
@@ -96,6 +96,17 @@
         this.querySelector('i').classList.toggle('bi-eye');
         this.querySelector('i').classList.toggle('bi-eye-slash');
       });
+      // Submit spinner and disable button (match L2 behavior)
+      const loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        loginForm.addEventListener('submit', function() {
+          const submitBtn = this.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm align-middle" role="status" aria-hidden="true"></span>';
+            submitBtn.disabled = true;
+          }
+        });
+      }
     });
   </script>
 </body>

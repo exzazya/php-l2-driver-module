@@ -114,8 +114,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $route === '/') {
             exit();
         }
     } else {
-        $loginError = 'Invalid username or password';
+        // Differentiate: email exists vs wrong password
         $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+        $drv = getDriverByEmail($username);
+        if (!$drv) {
+            $loginError = 'No driver account found for that email.';
+        } elseif (!passwordMatches($drv, $password, false)) {
+            $loginError = 'Incorrect password. Please try again.';
+        } else {
+            // Password matched but login still failed (unexpected)
+            $loginError = 'Unable to sign in. Please try again.';
+        }
     }
 }
 
