@@ -24,6 +24,11 @@ if (isset($_GET['route']) && $_GET['route'] !== '') {
 // Define base URL for assets
 define('BASE_URL', '//' . $_SERVER['HTTP_HOST'] . $script_dir);
 
+// Company contact info (used in footer)
+if (!defined('COMPANY_NAME'))  define('COMPANY_NAME',  'Jetlouge Travels');
+if (!defined('COMPANY_EMAIL')) define('COMPANY_EMAIL', 'support@jetlougetravels.com');
+if (!defined('COMPANY_PHONE')) define('COMPANY_PHONE', '+63 900 000 0000');
+
 // Asset helper function
 function asset($path) {
     return BASE_URL . '/public/' . ltrim($path, '/');

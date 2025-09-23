@@ -1,4 +1,24 @@
-<?php /* Driver Combined Policies: Terms & Conditions + Privacy Policy */ ?>
+<?php /* Driver Combined Policies: Terms & Conditions + Privacy Policy */
+// Agree & Return handler: set cookie, redirect back with accepted=1
+if (isset($_GET['agree']) && $_GET['agree'] === '1') {
+  $ret = isset($_GET['return']) ? (string)$_GET['return'] : '';
+  $cookieParams = [
+    'expires' => time() + 31536000,
+    'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/',
+    'domain' => '',
+    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ];
+  setcookie('policies_accepted', '1', $cookieParams);
+  if ($ret !== '') {
+    $sep = (strpos($ret, '?') === false) ? '?' : '&';
+    header('Location: ' . $ret . $sep . 'accepted=1');
+    exit;
+  }
+}
+$backTo = isset($_GET['return']) && $_GET['return'] !== '' ? (string)$_GET['return'] : route('login');
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -100,9 +120,12 @@
              Phone: [Insert Contact Number]</p>
         </section>
 
-        <p class="mt-4"><a class="btn btn-outline-primary" href="<?php echo route('login'); ?>">Back to Sign In</a></p>
+        <div class="mt-4 d-flex gap-2">
+          <a class="btn btn-primary" href="<?php echo htmlspecialchars($_SERVER['REQUEST_URI'], ENT_QUOTES, 'UTF-8') . (strpos($_SERVER['REQUEST_URI'], '?') === false ? '?' : '&'); ?>agree=1&return=<?php echo urlencode($backTo); ?>">I Agree &amp; Return</a>
+          <a class="btn btn-outline-primary" href="<?php echo $backTo; ?>">Back to Sign In</a>
+        </div>
       </div>
     </div>
   </div>
-</body>
+  </body>
 </html>

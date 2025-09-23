@@ -176,6 +176,12 @@
       <?php echo $content ?? ''; ?>
   </main>
 
+  <?php
+    // Global footer with company contact and legal links
+    $footerPath = __DIR__ . '/footer.php';
+    if (file_exists($footerPath)) { include $footerPath; }
+  ?>
+
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
