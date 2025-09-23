@@ -162,7 +162,7 @@
           </div>
           <div class="form-text">Enter the 6-digit code sent to your email.</div>
         </div>
-        
+
         <div class="d-grid">
           <button type="submit" class="btn btn-primary">
             <i class="bi bi-shield-check me-2"></i>Verify & Continue

@@ -72,6 +72,14 @@
               </label>
           </div>
 
+          <div class="mb-3 form-check text-start">
+            <?php $autoCheckPolicies = (!empty($_COOKIE['policies_accepted']) || (!empty($auto_check_policies) && $auto_check_policies)); ?>
+            <input type="checkbox" class="form-check-input" id="accept_policies" name="accept_policies" value="1" <?php echo $autoCheckPolicies ? 'checked' : ''; ?>>
+            <label class="form-check-label" for="accept_policies">
+              I agree to the <a href="<?php echo route('legal.policies'); ?>" target="_blank" rel="noopener">Terms &amp; Conditions and Privacy Policy</a>.
+            </label>
+          </div>
+
           <button type="submit" class="btn btn-login mb-3 w-100">
             <i class="bi bi-box-arrow-in-right me-2"></i> Sign In
           </button>

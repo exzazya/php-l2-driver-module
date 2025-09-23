@@ -201,3 +201,28 @@ function setDriverTwoFactorMethod($driverId, $method) {
     );
 }
 
+// ============================================
+// POLICY ACCEPTANCE HELPERS
+// ============================================
+/**
+ * Record acceptance of Terms & Conditions and Privacy Policy for a subject (admin, fleet_manager, driver)
+ */
+function recordPolicyAcceptance($subjectType, $subjectId, $ipAddress = null, $userAgent = null, $acceptedTerms = 1, $acceptedPrivacy = 1) {
+    $subjectType = in_array($subjectType, ['admin','fleet_manager','driver'], true) ? $subjectType : 'driver';
+    return executeQuery(
+        "INSERT INTO policy_acceptance (subject_type, subject_id, accepted_terms, accepted_privacy, accepted_at, ip_address, user_agent)
+         VALUES (?, ?, ?, ?, NOW(), ?, ?)
+         ON DUPLICATE KEY UPDATE accepted_terms = VALUES(accepted_terms), accepted_privacy = VALUES(accepted_privacy), accepted_at = VALUES(accepted_at), ip_address = VALUES(ip_address), user_agent = VALUES(user_agent)",
+        [$subjectType, (int)$subjectId, (int)$acceptedTerms, (int)$acceptedPrivacy, $ipAddress, $userAgent]
+    );
+}
+
+/** Check if policies were already accepted for this subject */
+function hasAcceptedPolicies($subjectType, $subjectId) {
+    $stmt = executeQuery("SELECT 1 FROM policy_acceptance WHERE subject_type = ? AND subject_id = ? LIMIT 1", [
+        in_array($subjectType, ['admin','fleet_manager','driver'], true) ? $subjectType : 'driver',
+        (int)$subjectId,
+    ]);
+    return $stmt && ($stmt->fetchColumn() ? true : false);
+}
+

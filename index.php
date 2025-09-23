@@ -54,6 +54,9 @@ function route($name, $params = []) {
         'account-security' => '/account/security',
         'forgot-password' => '/auth/forgot-password',
         'reset-password' => '/auth/reset-password',
+        'legal.policies' => '/legal/policies',
+        'legal.terms' => '/legal/terms',
+        'legal.privacy' => '/legal/privacy',
     ];
     
     $path = $routes[$name] ?? '/';
@@ -101,31 +104,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $route === '/') {
     
     $username = isset($_POST['username']) ? trim($_POST['username']) : '';
     $password = isset($_POST['password']) ? (string)$_POST['password'] : '';
+    // Remember checkbox state if user ticked policies during this attempt
+    $postedAccept = isset($_POST['accept_policies']) && $_POST['accept_policies'] === '1';
+    $auto_check_policies = false;
     
     // Ensure DB is reachable before attempting login
     if (!getDBConnection()) {
         $loginError = 'Database connection error. Please try again later.';
         $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
-    } elseif (login($username, $password)) {
-        // If 2FA is staged, send to the verification route; otherwise go to dashboard
-        if (!empty($_SESSION['2fa_pending_driver'])) {
-            header('Location: ' . route('twofa'));
-            exit();
-        } else {
-            header('Location: ' . route('dashboard'));
-            exit();
-        }
+        if ($postedAccept) { $auto_check_policies = true; }
     } else {
-        // Differentiate: email exists vs wrong password
-        $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+        // Validate credentials first
         $drv = getDriverByEmail($username);
         if (!$drv) {
+            $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
             $loginError = 'No driver account found for that email.';
+            if ($postedAccept) { $auto_check_policies = true; }
         } elseif (!passwordMatches($drv, $password, false)) {
+            $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
             $loginError = 'Incorrect password. Please try again.';
+            if ($postedAccept) { $auto_check_policies = true; }
         } else {
-            // Password matched but login still failed (unexpected)
-            $loginError = 'Unable to sign in. Please try again.';
+            // Enforce Terms & Privacy acceptance at login stage
+            $alreadyAccepted = hasAcceptedPolicies('driver', (int)$drv['id']);
+            $accept = isset($_POST['accept_policies']) && $_POST['accept_policies'] === '1';
+            if (!$alreadyAccepted && !$accept) {
+                $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+                $loginError = 'You must accept the Terms & Conditions and Privacy Policy to continue.';
+                if ($postedAccept) { $auto_check_policies = true; }
+            } else {
+                // Stage acceptance for 2FA or record immediately if no 2FA
+                $twofaEnabled = (int)($drv['twofa_enabled'] ?? 0) === 1;
+                $twofaMethod  = (string)($drv['twofa_method'] ?? 'email');
+                if ($twofaEnabled && $twofaMethod === 'email' && !$alreadyAccepted && $accept) {
+                    $_SESSION['policies_accept_pending_driver'] = [
+                        'driver_id' => (int)$drv['id'],
+                        'ip' => $_SERVER['REMOTE_ADDR'] ?? null,
+                        'ua' => $_SERVER['HTTP_USER_AGENT'] ?? null,
+                    ];
+                }
+                // Proceed with normal login (stages 2FA or creates session)
+                if (login($username, $password)) {
+                    if (!empty($_SESSION['2fa_pending_driver'])) {
+                        header('Location: ' . route('twofa'));
+                        exit();
+                    }
+                    // No 2FA -> record acceptance now if newly accepted
+                    if (!$alreadyAccepted && $accept) {
+                        recordPolicyAcceptance('driver', (int)$drv['id'], $_SERVER['REMOTE_ADDR'] ?? null, $_SERVER['HTTP_USER_AGENT'] ?? null, 1, 1);
+                        // Persist a client-side cookie to auto-check on login
+                        $cookieParams = [
+                            'expires' => time() + 31536000, // 1 year
+                            'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/',
+                            'domain' => '',
+                            'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+                            'httponly' => true,
+                            'samesite' => 'Lax',
+                        ];
+                        setcookie('policies_accepted', '1', $cookieParams);
+                    } elseif ($alreadyAccepted) {
+                        // Ensure cookie exists for auto-check in future logins
+                        $cookieParams = [
+                            'expires' => time() + 31536000, // 1 year
+                            'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/',
+                            'domain' => '',
+                            'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+                            'httponly' => true,
+                            'samesite' => 'Lax',
+                        ];
+                        setcookie('policies_accepted', '1', $cookieParams);
+                    }
+                    header('Location: ' . route('dashboard'));
+                    exit();
+                } else {
+                    // Unexpected: credential re-check failed
+                    $oldUsername = htmlspecialchars($username, ENT_QUOTES, 'UTF-8');
+                    $loginError = 'Unable to sign in. Please try again.';
+                    if ($postedAccept) { $auto_check_policies = true; }
+                }
+            }
         }
     }
 }
@@ -218,6 +275,7 @@ switch ($route) {
         break;
     case '/auth/2fa':
         require_once 'includes/auth.php';
+        require_once 'includes/database.php';
         // Require a staged driver pending record
         if (empty($_SESSION['2fa_pending_driver']) || empty($_SESSION['2fa_pending_driver']['driver_id'])) {
             header('Location: ' . route('login'));
@@ -235,8 +293,36 @@ switch ($route) {
             } else {
                 $otp = isset($_POST['otp']) ? preg_replace('/\D+/', '', $_POST['otp']) : '';
                 if ($otp !== '' && verifyDriverEmailOtp((int)$pending['driver_id'], $otp)) {
+                    // If acceptance was staged at login, record it now
+                    if (!empty($_SESSION['policies_accept_pending_driver'])) {
+                        $p = $_SESSION['policies_accept_pending_driver'];
+                        if ((int)($p['driver_id'] ?? 0) === (int)$pending['driver_id']) {
+                            recordPolicyAcceptance('driver', (int)$pending['driver_id'], $p['ip'] ?? null, $p['ua'] ?? null, 1, 1);
+                            // Persist a client-side cookie to auto-check on login
+                            $cookieParams = [
+                                'expires' => time() + 31536000, // 1 year
+                                'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/',
+                                'domain' => '',
+                                'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+                                'httponly' => true,
+                                'samesite' => 'Lax',
+                            ];
+                            setcookie('policies_accepted', '1', $cookieParams);
+                        }
+                        unset($_SESSION['policies_accept_pending_driver']);
+                    }
                     $drv = getDriverById((int)$pending['driver_id']);
                     if ($drv) { establishDriverSession($drv); }
+                    // Ensure cookie exists for auto-check in future logins
+                    $cookieParams = [
+                        'expires' => time() + 31536000, // 1 year
+                        'path' => rtrim(dirname($_SERVER['SCRIPT_NAME']), '/') . '/',
+                        'domain' => '',
+                        'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+                        'httponly' => true,
+                        'samesite' => 'Lax',
+                    ];
+                    setcookie('policies_accepted', '1', $cookieParams);
                     unset($_SESSION['2fa_pending_driver'], $_SESSION['2fa_method']);
                     header('Location: ' . route('dashboard'));
                     exit();
@@ -247,6 +333,15 @@ switch ($route) {
         }
         include 'views/auth/2fa.php';
         break;
+    case '/legal/policies':
+        include 'views/legal/policies.php';
+        break;
+    case '/legal/terms':
+        header('Location: ' . route('legal.policies'));
+        exit;
+    case '/legal/privacy':
+        header('Location: ' . route('legal.policies'));
+        exit;
     case '/auth/forgot-password':
         require_once 'includes/auth.php';
         require_once 'includes/database.php';
