@@ -1,7 +1,9 @@
 <?php
 $title = "Trip Assignment";
-session_start();
-require 'db_connect.php'; // make sure this connects properly
+// Only start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 if (!isset($_SESSION['driver_id'])) {
     header("Location: index.php"); // redirect if not logged in
@@ -21,7 +23,7 @@ ob_start();
     <div class="d-flex justify-content-between align-items-center page-header">
         <div class="d-flex align-items-center">
             <div class="dashboard-logo me-3">
-                <img src="<?php echo asset('img/jetlouge_logo.png'); ?>" alt="Jetlouge Travels" class="logo-img">
+                <img src="<?php echo asset('img/jetlouge_logo.webp'); ?>" alt="Jetlouge Travels" class="logo-img">
             </div>
             <div>
                 <h2 class="fw-bold mb-1">Trip Assignment</h2>

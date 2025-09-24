@@ -1,7 +1,12 @@
 <?php
 // Authentication functions for Jetlouge Travels Driver Module (Driver-only login)
 require_once 'database.php';
-session_start();
+require_once 'mailer.php';
+
+// Only start session if not already started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Provide getallheaders() for non-Apache environments (e.g., some Windows/IIS setups)
 if (!function_exists('getallheaders')) {
@@ -36,16 +41,20 @@ function login($identifier, $password) {
     $driver = getDriverByEmail($identifier);
     
     if ($driver && passwordMatches($driver, $password, true)) {
-        // Set driver session variables
-        $_SESSION['user_type'] = 'driver';
-        $_SESSION['driver_id'] = $driver['id'];
-        $_SESSION['user_id'] = $driver['id'];
-        $_SESSION['username'] = $driver['email']; // Use email as username for drivers
-        $_SESSION['full_name'] = $driver['name'] ?? '';
-        $_SESSION['role'] = 'driver';
-        $_SESSION['email'] = $driver['email'];
-        $_SESSION['license_number'] = $driver['license_number'] ?? '';
-        
+        // Stage email-based 2FA only when enabled per driver settings
+        $twofaEnabled = (int)($driver['twofa_enabled'] ?? 0) === 1;
+        $twofaMethod  = (string)($driver['twofa_method'] ?? 'email');
+        if ($twofaEnabled && $twofaMethod === 'email') {
+            try { maybeSendDriverEmailOtp($driver, true); } catch (Exception $e) {}
+            $_SESSION['2fa_pending_driver'] = [
+                'driver_id' => (int)$driver['id'],
+                'email_mask' => maskEmail((string)$driver['email'])
+            ];
+            $_SESSION['2fa_method'] = 'email';
+            return true; // caller should redirect to /auth/2fa when this flag is present
+        }
+        // No 2FA configured -> establish session directly
+        establishDriverSession($driver);
         return true;
     }
     // Server-side diagnostics (do not expose sensitive info to users)
@@ -56,6 +65,84 @@ function login($identifier, $password) {
     }
     
     return false;
+}
+
+// Establish driver session and update last_login
+if (!function_exists('establishDriverSession')) {
+    function establishDriverSession($driver) {
+        if (!$driver) return false;
+        $_SESSION['user_type'] = 'driver';
+        $_SESSION['driver_id'] = $driver['id'];
+        $_SESSION['user_id'] = $driver['id'];
+        $_SESSION['username'] = $driver['email'];
+        $_SESSION['full_name'] = $driver['name'] ?? '';
+        $_SESSION['role'] = 'driver';
+        $_SESSION['email'] = $driver['email'];
+        $_SESSION['license_number'] = $driver['license_number'] ?? '';
+        try { updateDriverLastLogin($driver['id']); } catch (Exception $e) {}
+        return true;
+    }
+}
+
+// Email OTP helpers for drivers
+if (!function_exists('generateEmailOtpCodeDriver')) {
+    function generateEmailOtpCodeDriver($digits = 6) {
+        $min = (int)pow(10, $digits - 1);
+        $max = (int)pow(10, $digits) - 1;
+        return (string)random_int($min, $max);
+    }
+}
+
+if (!function_exists('maskEmail')) {
+    function maskEmail($email) {
+        $email = (string)$email;
+        if ($email === '' || strpos($email, '@') === false) return 'your email';
+        [$name, $domain] = explode('@', $email, 2);
+        $nameMasked = strlen($name) <= 2 ? substr($name, 0, 1) . '*' : substr($name, 0, 2) . str_repeat('*', max(1, strlen($name) - 2));
+        $domainParts = explode('.', $domain);
+        $domainParts[0] = substr($domainParts[0], 0, 1) . str_repeat('*', max(1, strlen($domainParts[0]) - 1));
+        return $nameMasked . '@' . implode('.', $domainParts);
+    }
+}
+
+if (!function_exists('maybeSendDriverEmailOtp')) {
+    function maybeSendDriverEmailOtp($driver, $force = false) {
+        $driverId = (int)$driver['id'];
+        $email = trim((string)($driver['email'] ?? ''));
+        if ($email === '') return false;
+        $rec = getDriverEmailOtpRecord($driverId);
+        $now = time();
+        $canResend = true;
+        if ($rec && !$force) {
+            $last = strtotime((string)$rec['sent_at']);
+            if ($last && ($now - $last) < 60) { $canResend = false; }
+        }
+        if (!$rec || $force || $canResend) {
+            $code = generateEmailOtpCodeDriver(6);
+            $hash = password_hash($code, PASSWORD_DEFAULT);
+            $expiresAt = date('Y-m-d H:i:s', $now + 10 * 60);
+            upsertDriverEmailOtpCode($driverId, $hash, $expiresAt);
+            $html = '<p>Your Jetlouge Travels driver portal security code is:</p>' .
+                    '<p style="font-size:24px;font-weight:700;letter-spacing:3px;">' . htmlspecialchars($code, ENT_QUOTES, 'UTF-8') . '</p>' .
+                    '<p>This code will expire in 10 minutes. If you did not request this, you can ignore this email.</p>';
+            $text = "Your Jetlouge Travels driver portal security code is: {$code}\nThis code will expire in 10 minutes.";
+            sendSystemEmail($email, 'Your Verification Code', $html, $text);
+            return true;
+        }
+        return false;
+    }
+}
+
+if (!function_exists('verifyDriverEmailOtp')) {
+    function verifyDriverEmailOtp($driverId, $code) {
+        $rec = getDriverEmailOtpRecord((int)$driverId);
+        if (!$rec) return false;
+        if (strtotime((string)$rec['expires_at']) <= time()) return false;
+        $ok = password_verify((string)$code, (string)$rec['code_hash']);
+        if (!$ok) { incrementDriverEmailOtpAttempts((int)$driverId); return false; }
+        deleteDriverEmailOtpRecord((int)$driverId);
+        return true;
+    }
 }
 
 // Check password against stored hash. Supports bcrypt/argon via password_verify and
