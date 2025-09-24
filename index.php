@@ -26,8 +26,8 @@ define('BASE_URL', '//' . $_SERVER['HTTP_HOST'] . $script_dir);
 
 // Company contact info (used in footer)
 if (!defined('COMPANY_NAME'))  define('COMPANY_NAME',  'Jetlouge Travels');
-if (!defined('COMPANY_EMAIL')) define('COMPANY_EMAIL', 'support@jetlougetravels.com');
-if (!defined('COMPANY_PHONE')) define('COMPANY_PHONE', '+63 900 000 0000');
+if (!defined('COMPANY_EMAIL')) define('COMPANY_EMAIL', 'logistics2jetlougetravels@gmail.com');
+if (!defined('COMPANY_PHONE')) define('COMPANY_PHONE', '+63 09927215869');
 
 // Asset helper function
 function asset($path) {
