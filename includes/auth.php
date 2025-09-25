@@ -79,6 +79,10 @@ if (!function_exists('establishDriverSession')) {
         $_SESSION['role'] = 'driver';
         $_SESSION['email'] = $driver['email'];
         $_SESSION['license_number'] = $driver['license_number'] ?? '';
+        $_SESSION['phone'] = $driver['phone'] ?? '';
+        $_SESSION['address'] = $driver['address'] ?? '';
+        $_SESSION['emergency_contact'] = $driver['emergency_contact'] ?? '';
+        $_SESSION['emergency_phone'] = $driver['emergency_phone'] ?? '';
         try { updateDriverLastLogin($driver['id']); } catch (Exception $e) {}
         return true;
     }
@@ -211,7 +215,11 @@ function getCurrentUser() {
             'full_name' => $_SESSION['full_name'] ?? 'Unknown',
             'role' => $_SESSION['role'] ?? 'user',
             'email' => $_SESSION['email'] ?? '',
-            'user_type' => $_SESSION['user_type'] ?? 'admin'
+            'user_type' => $_SESSION['user_type'] ?? 'admin',
+            'phone' => $_SESSION['phone'] ?? '',
+            'address' => $_SESSION['address'] ?? '',
+            'emergency_contact' => $_SESSION['emergency_contact'] ?? '',
+            'emergency_phone' => $_SESSION['emergency_phone'] ?? ''
         ];
     }
     return null;
