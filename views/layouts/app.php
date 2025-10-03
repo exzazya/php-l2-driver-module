@@ -63,6 +63,10 @@
       $driver_id = $_SESSION['driver_id'] ?? null;
       $driverName = $_SESSION['full_name'] ?? 'Driver';
       $driverEmail = $_SESSION['email'] ?? '';
+      $driverPhone = $_SESSION['phone'] ?? '';
+      $driverAddress = $_SESSION['address'] ?? '';
+      $driverEmergencyContact = $_SESSION['emergency_contact'] ?? '';
+      $driverEmergencyPhone = $_SESSION['emergency_phone'] ?? '';
       $driverImg = 'img/default-profile.jpg'; // default image (under public)
 
       // Prefer session-cached path set after upload
@@ -79,7 +83,23 @@
           }
       }
       ?>
-    <div class="profile-section text-center">
+    <div class="profile-section text-center position-relative">
+      <button
+        type="button"
+        id="driverProfileInfoButton"
+        class="btn btn-outline-primary btn-sm position-absolute top-0 end-0 mt-1 me-1 d-flex align-items-center justify-content-center"
+        style="width: 32px; height: 32px;"
+        title="View profile details"
+        aria-label="View profile details"
+        data-name="<?php echo htmlspecialchars($driverName); ?>"
+        data-email="<?php echo htmlspecialchars($driverEmail); ?>"
+        data-phone="<?php echo htmlspecialchars($driverPhone); ?>"
+        data-address="<?php echo htmlspecialchars($driverAddress); ?>"
+        data-emergency-contact="<?php echo htmlspecialchars($driverEmergencyContact); ?>"
+        data-emergency-phone="<?php echo htmlspecialchars($driverEmergencyPhone); ?>"
+      >
+        <i class="bi bi-person-vcard"></i>
+      </button>
       <?php if (!empty($_SESSION['flash_error']) || !empty($_SESSION['flash_success'])): ?>
         <div class="mb-2">
           <?php if (!empty($_SESSION['flash_error'])): ?>
@@ -117,7 +137,7 @@
       <h6 class="fw-semibold mb-1"><?php echo htmlspecialchars($driverName); ?></h6>
       <small class="text-muted">Jetlouge Travels Driver</small>
       <br>
-      <small class="text-muted"><?php echo htmlspecialchars($driverEmail); ?></small>
+      <small class="text-muted" id="driverEmailText"><?php echo htmlspecialchars($driverEmail); ?></small>
       <script>
         (function(){
           const input = document.getElementById('drvAvatarInput');
@@ -168,6 +188,49 @@
     </ul>
   </aside>
 
+  <div class="modal fade" id="driverProfileInfoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="driverProfileDetailsForm" method="post" action="<?php echo route('profile-update'); ?>">
+          <div class="modal-header">
+            <h5 class="modal-title">Profile Details</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Full Name</label>
+              <input type="text" class="form-control" data-field="full_name" readonly>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-control" name="email" data-field="email" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Phone Number</label>
+              <input type="text" class="form-control" name="phone" maxlength="20">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Address</label>
+              <textarea class="form-control" name="address" rows="2"></textarea>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Emergency Contact Name</label>
+              <input type="text" class="form-control" name="emergency_contact" maxlength="100">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Emergency Contact Number</label>
+              <input type="text" class="form-control" name="emergency_phone" maxlength="20">
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="submit" class="btn btn-primary">Save changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Overlay for mobile -->
   <div id="overlay" class="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-50" style="z-index:1040; display: none;"></div>
 
@@ -193,6 +256,16 @@
       const sidebar = document.getElementById('sidebar');
       const overlay = document.getElementById('overlay');
       const mainContent = document.getElementById('main-content');
+      const showNotification = (type, message) => {
+        const msg = message || '';
+        if (typeof window.pushNotification === 'function') {
+          window.pushNotification(type, msg, 3500);
+        } else if (typeof window.showToast === 'function') {
+          window.showToast(msg, type, 3500);
+        } else {
+          window.alert(msg);
+        }
+      };
 
       // Mobile sidebar toggle
       if (menuBtn && sidebar && overlay) {
@@ -256,6 +329,84 @@
           document.body.style.overflow = '';
         }
       });
+
+      const profileBtn = document.getElementById('driverProfileInfoButton');
+      const profileModalEl = document.getElementById('driverProfileInfoModal');
+      if (profileBtn && profileModalEl && window.bootstrap) {
+        const modal = new window.bootstrap.Modal(profileModalEl);
+        const form = profileModalEl.querySelector('#driverProfileDetailsForm');
+        const fullNameInput = profileModalEl.querySelector('[data-field="full_name"]');
+        const emailInput = form ? form.querySelector('input[name="email"]') : null;
+        const phoneInput = form ? form.querySelector('input[name="phone"]') : null;
+        const addressInput = form ? form.querySelector('textarea[name="address"]') : null;
+        const emergencyNameInput = form ? form.querySelector('input[name="emergency_contact"]') : null;
+        const emergencyPhoneInput = form ? form.querySelector('input[name="emergency_phone"]') : null;
+        const decode = (value) => {
+          const textarea = document.createElement('textarea');
+          textarea.innerHTML = value || '';
+          return textarea.value;
+        };
+        profileBtn.addEventListener('click', () => {
+          const data = profileBtn.dataset;
+          if (fullNameInput) fullNameInput.value = decode(data.name);
+          if (emailInput) emailInput.value = decode(data.email);
+          if (phoneInput) phoneInput.value = decode(data.phone);
+          if (addressInput) addressInput.value = decode(data.address);
+          if (emergencyNameInput) emergencyNameInput.value = decode(data.emergencyContact);
+          if (emergencyPhoneInput) emergencyPhoneInput.value = decode(data.emergencyPhone);
+          modal.show();
+        });
+
+        if (form) {
+          form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const formData = new FormData(form);
+            if (submitBtn) {
+              submitBtn.disabled = true;
+              submitBtn.dataset.orig = submitBtn.dataset.orig || submitBtn.innerHTML;
+              submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm align-middle" role="status" aria-hidden="true"></span>';
+            }
+            try {
+              const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+              });
+              let payload = null;
+              try {
+                payload = await response.json();
+              } catch (err) {
+                payload = { success: false, message: 'Unexpected server response.' };
+              }
+              if (!response.ok || !payload || payload.success !== true) {
+                const message = (payload && payload.message) ? payload.message : 'Unable to update profile.';
+                showNotification('danger', message);
+                return;
+              }
+              const updatedEmail = payload.email || formData.get('email') || '';
+              profileBtn.dataset.email = updatedEmail;
+              const driverEmailText = document.getElementById('driverEmailText');
+              if (driverEmailText) driverEmailText.textContent = updatedEmail;
+              profileBtn.dataset.phone = payload.phone || formData.get('phone') || '';
+              profileBtn.dataset.address = payload.address || formData.get('address') || '';
+              profileBtn.dataset.emergencyContact = payload.emergency_contact || formData.get('emergency_contact') || '';
+              profileBtn.dataset.emergencyPhone = payload.emergency_phone || formData.get('emergency_phone') || '';
+              showNotification('success', payload.message || 'Profile updated successfully.');
+              modal.hide();
+            } catch (error) {
+              showNotification('danger', 'Network error. Please try again.');
+            } finally {
+              if (submitBtn) {
+                submitBtn.disabled = false;
+                if (submitBtn.dataset.orig) {
+                  submitBtn.innerHTML = submitBtn.dataset.orig;
+                }
+              }
+            }
+          });
+        }
+      }
     });
   </script>
 
