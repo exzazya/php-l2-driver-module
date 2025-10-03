@@ -1,6 +1,6 @@
 <?php
 $companyName  = defined('COMPANY_NAME') ? COMPANY_NAME : 'Jetlouge Travels';
-$companyEmail = defined('COMPANY_EMAIL') ? COMPANY_EMAIL : 'support@jetlougetravels.com';
+$companyEmail = defined('COMPANY_EMAIL') ? COMPANY_EMAIL : 'logistic2jetlougetravels@gmail.com';
 $companyPhone = defined('COMPANY_PHONE') ? COMPANY_PHONE : '+63 900 000 0000';
 ?>
 <footer class="app-footer mt-4">
