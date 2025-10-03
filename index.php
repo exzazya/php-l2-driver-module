@@ -54,6 +54,7 @@ function route($name, $params = []) {
         'trip-assignment' => '/trip-assignment',
         'reports-and-checklist' => '/reports-and-checklist',
         'profile-upload' => '/profile-upload',
+        'profile-update' => '/profile/update',
         'logout' => '/logout',
         'twofa' => '/auth/2fa',
         'account-security' => '/account/security',
@@ -277,6 +278,75 @@ switch ($route) {
             }
         }
         include 'views/account/security.php';
+        break;
+    case '/profile/update':
+        require_once 'includes/auth.php';
+        require_once 'includes/database.php';
+        requireLogin();
+        header('Content-Type: application/json');
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['success' => false, 'message' => 'Method Not Allowed']);
+            break;
+        }
+        $driverId = (int)($_SESSION['driver_id'] ?? 0);
+        if ($driverId <= 0) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Unauthorized request.']);
+            break;
+        }
+        $email = isset($_POST['email']) ? trim((string)$_POST['email']) : '';
+        $phone = isset($_POST['phone']) ? trim((string)$_POST['phone']) : '';
+        $address = isset($_POST['address']) ? trim((string)$_POST['address']) : '';
+        $emergencyContact = isset($_POST['emergency_contact']) ? trim((string)$_POST['emergency_contact']) : '';
+        $emergencyPhone = isset($_POST['emergency_phone']) ? trim((string)$_POST['emergency_phone']) : '';
+
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            http_response_code(422);
+            echo json_encode(['success' => false, 'message' => 'Please provide a valid email address.']);
+            break;
+        }
+
+        if ($phone !== '' && !preg_match('/^[0-9+()#*\s-]{5,20}$/', $phone)) {
+            http_response_code(422);
+            echo json_encode(['success' => false, 'message' => 'Enter a valid phone number.']);
+            break;
+        }
+        if ($emergencyPhone !== '' && !preg_match('/^[0-9+()#*\s-]{5,20}$/', $emergencyPhone)) {
+            http_response_code(422);
+            echo json_encode(['success' => false, 'message' => 'Enter a valid emergency contact number.']);
+            break;
+        }
+
+        try {
+            $existing = getDriverByEmail($email);
+            if ($existing && (int)$existing['id'] !== $driverId) {
+                http_response_code(409);
+                echo json_encode(['success' => false, 'message' => 'Email is already in use by another driver.']);
+                break;
+            }
+
+            if (!updateDriverContactDetails($driverId, $email, $phone, $address, $emergencyContact, $emergencyPhone)) {
+                throw new RuntimeException('Failed to update profile.');
+            }
+            $_SESSION['email'] = $email;
+            $_SESSION['phone'] = $phone;
+            $_SESSION['address'] = $address;
+            $_SESSION['emergency_contact'] = $emergencyContact;
+            $_SESSION['emergency_phone'] = $emergencyPhone;
+            echo json_encode([
+                'success' => true,
+                'message' => 'Profile updated successfully.',
+                'email' => $email,
+                'phone' => $phone,
+                'address' => $address,
+                'emergency_contact' => $emergencyContact,
+                'emergency_phone' => $emergencyPhone
+            ]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => 'An unexpected error occurred.']);
+        }
         break;
     case '/auth/2fa':
         require_once 'includes/auth.php';

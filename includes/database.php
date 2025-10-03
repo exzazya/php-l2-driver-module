@@ -83,6 +83,20 @@ function updateDriverLastLogin($driverId) {
     return executeQuery("UPDATE drivers SET last_login = NOW() WHERE id = ?", [(int)$driverId]);
 }
 
+function updateDriverContactDetails($driverId, $email, $phone, $address, $emergencyContact, $emergencyPhone) {
+    return executeQuery(
+        "UPDATE drivers SET email = ?, phone = ?, address = ?, emergency_contact = ?, emergency_phone = ?, updated_at = NOW() WHERE id = ?",
+        [
+            $email !== '' ? $email : null,
+            $phone !== '' ? $phone : null,
+            $address !== '' ? $address : null,
+            $emergencyContact !== '' ? $emergencyContact : null,
+            $emergencyPhone !== '' ? $emergencyPhone : null,
+            (int)$driverId
+        ]
+    );
+}
+
 function getUserByCredentials($identifier) {
     // Try admin first
     $admin = getAdminByUsername($identifier);

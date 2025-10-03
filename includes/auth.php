@@ -3,6 +3,49 @@
 require_once 'database.php';
 require_once 'mailer.php';
 
+function renderSecurityCodeEmail($code, $introText = 'Use the following verification code to continue:') {
+    $safeCode = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
+    $safeIntro = htmlspecialchars($introText, ENT_QUOTES, 'UTF-8');
+    return '<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jetlouge Travels Security Code</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f4f6fb;font-family:Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;color:#1f2937;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;width:100%;">
+      <tr>
+        <td align="center" style="padding:24px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:520px;background:#ffffff;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 14px 40px rgba(17,24,39,0.12);overflow:hidden;">
+            <tr>
+              <td align="center" style="background:#0f3d64;padding:20px 24px;">
+                <span style="display:inline-block;font-size:20px;font-weight:700;color:#ffffff;letter-spacing:0.5px;">Jetlouge Travels</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:28px 24px 16px;text-align:left;font-size:16px;line-height:1.55;color:#1f2937;">
+                <p style="margin:0 0 18px;">' . $safeIntro . '</p>
+                <div style="text-align:center;margin:0 0 22px;">
+                  <span style="display:inline-block;padding:14px 32px;font-size:28px;font-weight:700;letter-spacing:8px;background:#0f3d64;color:#ffffff;border-radius:10px;">' . $safeCode . '</span>
+                </div>
+                <p style="margin:0;font-size:14px;color:#6b7280;">This code will expire in 10 minutes. If you didn\'t request it, please ignore this email.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 24px 24px;background:#f8fafc;border-top:1px solid #e5e7eb;text-align:left;font-size:13px;color:#6b7280;">
+                Need help? Contact us at <a href="mailto:logistics2jetlougetravels@gmail.com" style="color:#0f3d64;text-decoration:none;font-weight:600;">logistics2jetlougetravels@gmail.com</a>.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>';
+}
+
 // Only start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -79,6 +122,10 @@ if (!function_exists('establishDriverSession')) {
         $_SESSION['role'] = 'driver';
         $_SESSION['email'] = $driver['email'];
         $_SESSION['license_number'] = $driver['license_number'] ?? '';
+        $_SESSION['phone'] = $driver['phone'] ?? '';
+        $_SESSION['address'] = $driver['address'] ?? '';
+        $_SESSION['emergency_contact'] = $driver['emergency_contact'] ?? '';
+        $_SESSION['emergency_phone'] = $driver['emergency_phone'] ?? '';
         try { updateDriverLastLogin($driver['id']); } catch (Exception $e) {}
         return true;
     }
@@ -122,9 +169,7 @@ if (!function_exists('maybeSendDriverEmailOtp')) {
             $hash = password_hash($code, PASSWORD_DEFAULT);
             $expiresAt = date('Y-m-d H:i:s', $now + 10 * 60);
             upsertDriverEmailOtpCode($driverId, $hash, $expiresAt);
-            $html = '<p>Your Jetlouge Travels driver portal security code is:</p>' .
-                    '<p style="font-size:24px;font-weight:700;letter-spacing:3px;">' . htmlspecialchars($code, ENT_QUOTES, 'UTF-8') . '</p>' .
-                    '<p>This code will expire in 10 minutes. If you did not request this, you can ignore this email.</p>';
+            $html = renderSecurityCodeEmail($code, 'We received a request to verify your Jetlouge Travels driver account.');
             $text = "Your Jetlouge Travels driver portal security code is: {$code}\nThis code will expire in 10 minutes.";
             sendSystemEmail($email, 'Your Verification Code', $html, $text);
             return true;
@@ -211,7 +256,11 @@ function getCurrentUser() {
             'full_name' => $_SESSION['full_name'] ?? 'Unknown',
             'role' => $_SESSION['role'] ?? 'user',
             'email' => $_SESSION['email'] ?? '',
-            'user_type' => $_SESSION['user_type'] ?? 'admin'
+            'user_type' => $_SESSION['user_type'] ?? 'admin',
+            'phone' => $_SESSION['phone'] ?? '',
+            'address' => $_SESSION['address'] ?? '',
+            'emergency_contact' => $_SESSION['emergency_contact'] ?? '',
+            'emergency_phone' => $_SESSION['emergency_phone'] ?? ''
         ];
     }
     return null;
