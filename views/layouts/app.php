@@ -26,6 +26,13 @@
       var base = String(window.BASE_URL || '').replace(/\/public\/?$/i, '');
       return base + '/' + p;
     };
+    // For page navigations, preserve BASE_URL including /public if present
+    window.pageUrl = function(path) {
+      if (!path) return '';
+      var p = String(path).replace(/^\/+/, '');
+      var base = String(window.BASE_URL || '').replace(/\/+$/,'');
+      return base + '/' + p;
+    };
     window.assetUrl = function(path) {
       if (!path) return '';
       var p = String(path).replace(/^\/+/, '');

@@ -13,8 +13,9 @@ if (!isset($_SESSION['driver_id'])) {
 // Page-specific styles
 $styles = '<link rel="stylesheet" href="' . asset('css/trip-assignment.css') . '">';
 
-// Page-specific scripts
-$scripts = '<script src="' . asset('js/trip-assignment.js') . '"></script>';
+// Page-specific scripts (with cache-busting)
+$ver = date('Ymd-His');
+$scripts = '<script src="' . asset('js/trip-assignment.js') . '?v=' . $ver . '"></script>';
 
 // Start capturing content
 ob_start();

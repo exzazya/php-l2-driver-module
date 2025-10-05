@@ -25,7 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function fetchAssignments(status) {
     try {
-      const res = await fetch(`api/assignments.php?status=${encodeURIComponent(status)}`, {
+      const url = (window.publicUrl ? window.publicUrl(`api/assignments.php?status=${encodeURIComponent(status)}`) : `api/assignments.php?status=${encodeURIComponent(status)}`);
+      const res = await fetch(url, {
         headers: { 'Accept': 'application/json' },
         credentials: 'same-origin'
       });
@@ -85,6 +86,39 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.card.main-card .badge.bg-primary').textContent = String(items.length);
   }
 
+  function goToLiveTracking(tripId) {
+    const rel = `index.php?route=live-tracking&trip_id=${tripId}`;
+    // Preferred: build via pageUrl (preserves BASE_URL + /public)
+    const built = (window.pageUrl ? window.pageUrl(rel) : (window.BASE_URL ? (String(window.BASE_URL).replace(/\/+$/,'') + '/' + rel) : rel));
+    const url = (/^https?:/i.test(built)) ? built : (window.location.origin + (built.startsWith('/') ? '' : '/') + built);
+    try { console.debug('[trip-assignment] redirect', { rel, built, url, BASE_URL: window.BASE_URL }); } catch (_) {}
+    // Try simple navigation
+    try { window.location.assign(url); return; } catch (_) {}
+    try { window.location.href = url; return; } catch (_) {}
+    try { window.top.location.assign(url); return; } catch (_) {}
+    try { window.top.location.href = url; return; } catch (_) {}
+    // Anchor fallback
+    try {
+      const a = document.createElement('a');
+      a.href = url; a.target = '_self'; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); setTimeout(() => { try { a.remove(); } catch(_) {} }, 300);
+      return;
+    } catch (_) {}
+    // Form submit fallback
+    try {
+      const form = document.createElement('form');
+      form.method = 'GET';
+      form.action = (window.pageUrl ? window.pageUrl('index.php') : 'index.php');
+      const r = document.createElement('input'); r.type = 'hidden'; r.name = 'route'; r.value = 'live-tracking'; form.appendChild(r);
+      const t = document.createElement('input'); t.type = 'hidden'; t.name = 'trip_id'; t.value = String(tripId); form.appendChild(t);
+      document.body.appendChild(form);
+      form.submit();
+      return;
+    } catch (_) {}
+    // safety fallback
+    setTimeout(() => { try { window.location.replace(url); } catch (_) {} }, 150);
+  }
+
   function renderCompleted(items) {
     if (!completedTbody) return;
     if (!items.length) {
@@ -135,7 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btns = document.querySelectorAll('button[data-action]');
     btns.forEach(b => b.disabled = true);
     try {
-      const res = await fetch('api/assignments.php', {
+      const apiUrl = (window.publicUrl ? window.publicUrl('api/assignments.php') : 'api/assignments.php');
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         credentials: 'same-origin',
@@ -143,13 +178,30 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.success !== false) {
-        showAlert('success', 'Trip Accepted & Auto-Picked Up!', 'Trip accepted and passenger automatically marked as picked up! Redirecting to live tracking...');
-        
-        setTimeout(() => {
-            window.location.href = `index.php?route=live-tracking&trip_id=${tripId}`;
-        }, 2000);
+        // Two-phase flow: only accepted. Redirect to Live Tracking.
+        try { showAlert('success', 'Trip accepted', 'Redirecting to live tracking...'); } catch (_) {}
+        const payload = data && data.data ? data.data : {};
+        const openId = payload.trip_id || tripId;
+        goToLiveTracking(openId);
+        return;
       } else {
-        throw new Error(data?.message || 'Failed to accept trip');
+        // If server says you already have an ongoing trip, redirect to the current accepted one
+        const msg = (data && data.message) ? String(data.message) : '';
+        if (res.status === 409 || /ongoing trip/i.test(msg)) {
+          const listUrl = (window.publicUrl ? window.publicUrl('api/assignments.php?status=accepted') : 'api/assignments.php?status=accepted');
+          try {
+            const r2 = await fetch(listUrl, { credentials: 'same-origin' });
+            const d2 = await r2.json().catch(() => ({}));
+            const rows = Array.isArray(d2?.data?.assignments) ? d2.data.assignments : [];
+            const picked = rows.find(x => String(x.status||'').toLowerCase() === 'in_progress' || x.pickup_at);
+            const target = picked || rows[0];
+            if (target && (target.trip_id || target.id)) {
+              goToLiveTracking(target.trip_id || target.id);
+              return;
+            }
+          } catch (_) {}
+        }
+        throw new Error(msg || 'Failed to accept trip');
       }
     } catch (e) {
       alert(`Accept failed: ${e.message}`);
@@ -166,7 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const btns = document.querySelectorAll('button[data-action]');
     btns.forEach(b => b.disabled = true);
     try {
-      const res = await fetch('api/assignments.php', {
+      const apiUrl = (window.publicUrl ? window.publicUrl('api/assignments.php') : 'api/assignments.php');
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         credentials: 'same-origin',

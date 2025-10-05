@@ -210,6 +210,30 @@
     }
   }
 
+  function startAssignmentPoll(){
+    if (!state.tripId || state.assignPollId) return;
+    state.assignPollId = setInterval(async () => {
+      try {
+        const item = await fetchAssignmentByTripId(state.tripId);
+        if (!item) return;
+        const prevPicked = !!state.isPickedUp;
+        const statusStr = String(item.status || item.trip_status || '').toLowerCase();
+        const picked = (
+          statusStr === 'in_progress' || statusStr === 'ongoing' || statusStr === 'picked_up' ||
+          !!item.pickup_at || !!item.picked_up_at || !!item.pickupTime || isLocalPicked(state.tripId)
+        );
+        state.isPickedUp = picked;
+        if (els.pickupBadge) els.pickupBadge.classList.toggle('d-none', !picked);
+        if (els.pickupBtn) els.pickupBtn.classList.toggle('d-none', picked);
+        if (picked && state.layers.start) { try { state.map.removeLayer(state.layers.start); } catch (e) {} state.layers.start = null; }
+        if (picked !== prevPicked && state.map) {
+          purgeRouteVisuals();
+          try { await updateRoutedPaths(); } catch(_) { renderRoute(); }
+        }
+      } catch (_) {}
+    }, 10000);
+  }
+
   function initMap(){
     const mapEl = document.getElementById('map');
     if (mapEl) mapEl.classList.remove('d-none');
