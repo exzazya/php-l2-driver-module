@@ -22,7 +22,9 @@
     window.publicUrl = function(path) {
       if (!path) return '';
       var p = String(path).replace(/^\/+/, '');
-      return window.BASE_URL + '/' + p;
+      // Ensure API calls work even if BASE_URL contains /public
+      var base = String(window.BASE_URL || '').replace(/\/public\/?$/i, '');
+      return base + '/' + p;
     };
     window.assetUrl = function(path) {
       if (!path) return '';

@@ -110,8 +110,9 @@ try {
                 }
 
                 executeQuery('UPDATE mobile_assignments SET is_viewed = 1, is_accepted = 1, accepted_at = NOW(), is_declined = 0, decline_reason = NULL WHERE id = ?', [$ma['id']]);
+                // Two-phase flow: keep trip as accepted until driver taps Picked Up
                 executeQuery("UPDATE trips SET status = 'accepted' WHERE id = ?", [$tripId]);
-                // Optional: set driver/vehicle on_trip immediately
+                // Set driver/vehicle on_trip
                 executeQuery("UPDATE drivers SET status = 'on_trip' WHERE id = ?", [$driverId]);
                 executeQuery("UPDATE vehicles v JOIN trips t ON v.id = t.vehicle_id SET v.status = 'on_trip' WHERE t.id = ?", [$tripId]);
 
@@ -135,6 +136,26 @@ try {
 
                 $pdo->commit();
                 echo generateApiResponse(true, ['trip_id' => $tripId, 'assignment_id' => $ma['id'], 'status' => 'declined'], 'Assignment declined');
+                exit();
+            } elseif ($action === 'pickup') {
+                // Handle pickup action - mark trip as in_progress
+                if ($ma['is_accepted'] != 1) {
+                    $pdo->rollBack();
+                    http_response_code(400);
+                    echo generateApiResponse(false, null, 'Cannot pickup: assignment must be accepted first');
+                    exit();
+                }
+
+                // Update trip status to in_progress
+                executeQuery("UPDATE trips SET status = 'in_progress', pickup_at = NOW() WHERE id = ?", [$tripId]);
+                
+                // Log the pickup
+                executeQuery('INSERT INTO audits (actor_type, actor_id, action, entity_type, entity_id, metadata_json) VALUES (?,?,?,?,?,?)', [
+                    'driver', $driverId, 'pickup_trip', 'trip', $tripId, json_encode(['assignment_id' => $ma['id']])
+                ]);
+
+                $pdo->commit();
+                echo generateApiResponse(true, ['trip_id' => $tripId, 'assignment_id' => $ma['id'], 'status' => 'in_progress'], 'Passenger picked up successfully');
                 exit();
             } elseif ($action === 'complete') {
                 // Complete the trip

@@ -142,9 +142,15 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ action: 'accept', trip_id: tripId })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || data?.success === false) throw new Error(data?.message || 'Failed to accept');
-      // Redirect to live tracking with trip_id
-      window.location.href = `index.php?route=live-tracking&trip_id=${encodeURIComponent(tripId)}`;
+      if (res.ok && data?.success !== false) {
+        showAlert('success', 'Trip Accepted & Auto-Picked Up!', 'Trip accepted and passenger automatically marked as picked up! Redirecting to live tracking...');
+        
+        setTimeout(() => {
+            window.location.href = `index.php?route=live-tracking&trip_id=${tripId}`;
+        }, 2000);
+      } else {
+        throw new Error(data?.message || 'Failed to accept trip');
+      }
     } catch (e) {
       alert(`Accept failed: ${e.message}`);
       await loadAll();

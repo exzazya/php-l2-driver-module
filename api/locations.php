@@ -71,8 +71,7 @@ try {
             $inserted++;
         }
 
-        // If first upload for trip, transition trip to in_progress
-        executeQuery("UPDATE trips SET status = 'in_progress' WHERE id = ? AND status IN ('accepted','assigned','scheduled','en_route')", [$tripId]);
+        // Do not auto-transition status here; pickup is an explicit action via assignments API
 
         executeQuery('INSERT INTO audits (actor_type, actor_id, action, entity_type, entity_id, metadata_json) VALUES (?,?,?,?,?,?)', [
             'driver', $driverId, 'upload_locations', 'trip', $tripId, json_encode(['points' => $inserted])
