@@ -44,6 +44,7 @@
     tripId: tripIdParam,
     trip: null, // from assignments GET (includes trips.*)
     isPickedUp: false,
+    assignmentAccepted: false,
     driverPos: null, // [lat,lng]
     map: null,
     routeGroup: null, // layer group to hold all route polylines for easy clearing
@@ -67,6 +68,7 @@
     lastRouteAt: 0,
     lastRouteDriverLatLng: null,
     pickupProcessing: false,
+    assignPollId: null,
   };
 
   const fmt = {
@@ -100,6 +102,15 @@
   function assetUrl(path){ return (window.assetUrl ? window.assetUrl(path) : path); }
   function publicUrl(path){ return (window.publicUrl ? window.publicUrl(path) : path); }
 
+  // Local storage helpers for pickup persistence across reloads
+  function lsKeyPicked(id){ return 'lt_pick_' + String(id || ''); }
+  function isLocalPicked(id){ try { return localStorage.getItem(lsKeyPicked(id)) === '1'; } catch(_) { return false; } }
+  function markLocalPicked(id){ try { localStorage.setItem(lsKeyPicked(id), '1'); } catch(_) {} }
+  function clearLocalPicked(id){ try { localStorage.removeItem(lsKeyPicked(id)); } catch(_) {} }
+  function setLastPickedTripId(id){ try { localStorage.setItem('lt_last_picked_trip_id', String(id)); } catch(_) {} }
+  function getLastPickedTripId(){ try { const v = localStorage.getItem('lt_last_picked_trip_id'); const n = parseInt(v,10); return isNaN(n)?0:n; } catch(_) { return 0; } }
+  function clearLastPickedTripId(){ try { localStorage.removeItem('lt_last_picked_trip_id'); } catch(_) {} }
+
   async function fetchJson(url, opts){
     try {
       const res = await fetch(url, Object.assign({ credentials: 'same-origin' }, opts));
@@ -118,8 +129,21 @@
     return items;
   }
 
+  async function fetchAssignmentByTripId(tripId){
+    const { ok, data } = await fetchJson(publicUrl('api/assignments.php?trip_id=' + encodeURIComponent(tripId)));
+    if (!ok || !data || data.success === false) return null;
+    const items = Array.isArray(data?.data?.assignments) ? data.data.assignments : [];
+    return items.length > 0 ? items[0] : null;
+  }
+
   async function loadTrip() {
-    // Try accepted first (includes in_progress), then pending
+    // If a specific tripId is provided, try to load it directly first
+    let tr = null;
+    if (state.tripId) {
+      tr = await fetchAssignmentByTripId(state.tripId);
+    }
+
+    // Try accepted first (includes in_progress), then pending (fallback when not found by id)
     let accepted = await fetchAssignments('accepted');
     let pending = [];
     if (!accepted || accepted.length === 0) {
@@ -129,11 +153,24 @@
     let all = (accepted || []).concat(pending || []);
     if (!Array.isArray(all)) all = [];
 
-    // Prefer explicit tripId when provided
-    let tr = null;
-    if (state.tripId) {
+    // If not found by direct fetch, prefer explicit tripId among loaded arrays
+    if (!tr && state.tripId) {
       tr = all.find(a => Number(a.trip_id || a.id) === Number(state.tripId)) || null;
     }
+    // Otherwise, if we remember a last picked trip locally, prefer it
+    if (!tr) {
+      const lastId = getLastPickedTripId();
+      if (lastId > 0) {
+        tr = all.find(a => Number(a.trip_id || a.id) === lastId) || tr;
+      }
+    }
+    // Otherwise prefer an in-progress/ongoing (picked) accepted assignment
+    const isPicked = (row) => {
+      const s = String(row?.status || '').toLowerCase();
+      return s === 'in_progress' || s === 'ongoing' || !!row?.pickup_at;
+    };
+    if (!tr) tr = (accepted.find(isPicked) || null);
+    // Fallback to first accepted, then first pending
     if (!tr) tr = accepted[0] || pending[0] || null;
 
     if (!tr) {
@@ -144,7 +181,16 @@
 
     state.tripId = Number(tr.trip_id || tr.id); // normalize
     state.trip = tr;
-    state.isPickedUp = String(tr.status || '').toLowerCase() === 'in_progress';
+    const statusStr = String(tr.status || tr.trip_status || '').toLowerCase();
+    const picked = (
+      statusStr === 'in_progress' ||
+      statusStr === 'ongoing' ||
+      statusStr === 'picked_up' ||
+      !!tr.pickup_at || !!tr.picked_up_at || !!tr.pickupTime
+    ) || isLocalPicked(state.tripId);
+    state.isPickedUp = picked;
+    const acceptedFlag = (Number(tr.is_accepted || 0) === 1) || statusStr === 'accepted' || picked;
+    state.assignmentAccepted = !!acceptedFlag;
 
     // Fill labels
     if (els.startLabel) els.startLabel.textContent = String(tr.start_location || tr.pickup_address || 'Start');
@@ -153,13 +199,20 @@
     if (els.pickupBtn) {
       els.pickupBtn.classList.toggle('d-none', state.isPickedUp);
       // Disable pickup until assignment is accepted
-      const acceptedFlag = Number(tr.is_accepted || 0) === 1;
       els.pickupBtn.disabled = !acceptedFlag;
     }
-    if (els.noTrip) els.noTrip.classList.add('d-none');
+    if (!acceptedFlag) {
+      showNoTrip('Pending assignment detected. Accept it to start tracking.');
+    } else {
+      if (els.noTrip) els.noTrip.classList.add('d-none');
+      const mapEl = document.getElementById('map');
+      if (mapEl) mapEl.classList.remove('d-none');
+    }
   }
 
   function initMap(){
+    const mapEl = document.getElementById('map');
+    if (mapEl) mapEl.classList.remove('d-none');
     const map = L.map('map', { zoomControl: true });
     state.map = map;
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -179,12 +232,17 @@
     const startLL = getTripStartLatLng(state.trip);
     const destLL = getTripDestLatLng(state.trip);
 
-    if (startLL && fmt.coordOk(startLL[0]) && fmt.coordOk(startLL[1])) {
+    if (!state.isPickedUp && startLL && fmt.coordOk(startLL[0]) && fmt.coordOk(startLL[1])) {
       if (!state.layers.start) {
         state.layers.start = L.marker(startLL, { title: 'Start' }).addTo(state.map);
         state.layers.start.bindPopup('Start');
       } else {
         state.layers.start.setLatLng(startLL);
+      }
+    } else {
+      if (state.layers.start) {
+        try { state.map.removeLayer(state.layers.start); } catch (e) {}
+        state.layers.start = null;
       }
     }
     if (destLL && fmt.coordOk(destLL[0]) && fmt.coordOk(destLL[1])) {
@@ -523,6 +581,9 @@
         alert((data && data.message) ? data.message : 'Failed to complete trip');
         return;
       }
+      clearLocalPicked(state.tripId);
+      const lastId = getLastPickedTripId();
+      if (lastId && Number(lastId) === Number(state.tripId)) clearLastPickedTripId();
       alert('Trip completed successfully.');
       window.location.href = publicUrl('index.php?route=trip-assignment');
     } catch (e) {
@@ -558,10 +619,19 @@
     initDomRefs();
     await loadTrip();
     if (!state.trip) return; // no trip
-    initMap();
+    // Do not show map or start tracking until assignment is accepted
     bindUi();
+    if (!state.assignmentAccepted) {
+      const mapContainer = document.getElementById('map');
+      if (mapContainer) mapContainer.classList.add('d-none');
+      const pendingMsg = document.getElementById('pending-msg');
+      if (pendingMsg) pendingMsg.classList.remove('d-none');
+      return;
+    }
+    initMap();
     setupUnloadFlush();
     startWatch();
+    startAssignmentPoll();
   }
 
   async function pickupTrip(){
@@ -581,9 +651,14 @@
         return;
       }
       state.isPickedUp = true;
+      markLocalPicked(state.tripId);
+      setLastPickedTripId(state.tripId);
+      if (state.trip) { state.trip.status = 'in_progress'; state.trip.pickup_at = new Date().toISOString(); }
       if (els.pickupBadge) els.pickupBadge.classList.remove('d-none');
       if (els.pickupBtn) els.pickupBtn.classList.add('d-none');
       setStatus('Picked up');
+      // Remove start marker entirely after pickup
+      if (state.layers.start) { try { state.map.removeLayer(state.layers.start); } catch (e) {} state.layers.start = null; }
       // Force immediate reroute to destination
       state.lastRouteAt = 0;
       state.lastRouteDriverLatLng = null;

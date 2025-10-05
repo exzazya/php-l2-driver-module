@@ -11,8 +11,37 @@ $styles = '<link rel="stylesheet" href="' . asset('vendor/leaflet/leaflet.css') 
             @media (max-width: 768px) { #map { height: 65vh; min-height: 300px; } }
           </style>';
 
-// Precompute tripId from query if present
+// Precompute tripId from query if present; otherwise pick driver's current assignment
 $tripId = isset($_GET['trip_id']) ? (int)$_GET['trip_id'] : 0;
+if ($tripId <= 0) {
+  try {
+    if (!function_exists('executeQuery')) {
+      @require_once __DIR__ . '/../includes/database.php';
+    }
+    $driverId = isset($_SESSION['driver_id']) ? (int)$_SESSION['driver_id'] : 0;
+    if ($driverId > 0 && function_exists('executeQuery')) {
+      // Prefer in_progress, then accepted, newest first
+      $stmt = executeQuery(
+        "SELECT ma.trip_id
+           FROM mobile_assignments ma
+           JOIN trips t ON t.id = ma.trip_id
+          WHERE ma.driver_id = ?
+            AND (ma.is_declined = 0 OR ma.is_declined IS NULL)
+            AND (t.status IN ('in_progress','accepted'))
+            AND (t.status != 'completed' AND ma.completed_at IS NULL)
+          ORDER BY (t.status = 'in_progress') DESC, ma.assigned_at DESC
+          LIMIT 1",
+        [$driverId]
+      );
+      $row = $stmt ? $stmt->fetch() : false;
+      if ($row && isset($row['trip_id'])) {
+        $tripId = (int)$row['trip_id'];
+      }
+    }
+  } catch (Exception $e) {
+    // ignore and keep tripId = 0
+  }
+}
 
 // Page scripts: Leaflet and our live-tracking logic (with cache-busting)
 $ver = date('Ymd-His');

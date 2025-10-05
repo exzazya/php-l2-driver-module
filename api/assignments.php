@@ -32,6 +32,23 @@ try {
     switch ($method) {
         case 'GET':
             // List pending or all assignments for the driver
+            // If trip_id is specified, return that specific assignment regardless of status
+            $tripIdQ = isset($_GET['trip_id']) ? (int)$_GET['trip_id'] : 0;
+            if ($tripIdQ > 0) {
+                $stmt = executeQuery(
+                    "SELECT ma.*, t.*
+                     FROM mobile_assignments ma
+                     JOIN trips t ON t.id = ma.trip_id
+                     WHERE ma.driver_id = ? AND ma.trip_id = ?
+                     LIMIT 1",
+                    [$driverId, $tripIdQ]
+                );
+                $row = $stmt ? $stmt->fetch() : false;
+                $rows = $row ? [$row] : [];
+                echo generateApiResponse(true, ['assignments' => $rows], 'OK');
+                break;
+            }
+
             $status = isset($_GET['status']) ? strtolower(trim($_GET['status'])) : 'pending';
             $where = '';
             $params = [$driverId];
