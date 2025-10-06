@@ -627,8 +627,9 @@
       clearLocalPicked(state.tripId);
       const lastId = getLastPickedTripId();
       if (lastId && Number(lastId) === Number(state.tripId)) clearLastPickedTripId();
-      alert('Trip completed successfully.');
-      window.location.href = publicUrl('index.php?route=trip-assignment');
+      alert('Trip completed successfully. Redirecting to trip report...');
+      const rel = 'index.php?route=reports-and-checklist&trip_id=' + encodeURIComponent(state.tripId);
+      window.location.href = (window.pageUrl ? window.pageUrl(rel) : rel);
     } catch (e) {
       alert('Network error while completing trip.');
     } finally {
