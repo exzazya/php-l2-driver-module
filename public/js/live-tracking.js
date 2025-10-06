@@ -69,6 +69,7 @@
     lastRouteDriverLatLng: null,
     pickupProcessing: false,
     assignPollId: null,
+    gpsReady: false,
   };
 
   const fmt = {
@@ -112,6 +113,8 @@
     els.pickupBtn = qs('pickupTripBtn');
     els.pickupBadge = qs('pickedUpBadge');
     els.noTrip = qs('noActiveTrip');
+    els.gpsAlert = qs('gpsRequired');
+    els.gpsRetryBtn = qs('gpsRetryBtn');
   }
 
   function setStatus(txt){ if (els.statusText) els.statusText.textContent = txt; }
@@ -120,6 +123,17 @@
 
   function assetUrl(path){ return (window.assetUrl ? window.assetUrl(path) : path); }
   function publicUrl(path){ return (window.publicUrl ? window.publicUrl(path) : path); }
+
+  // Toggle action buttons based on GPS and assignment state
+  function updateActionButtons(){
+    const canAct = !!(state.gpsReady && state.assignmentAccepted);
+    if (els.pickupBtn) {
+      els.pickupBtn.disabled = !canAct || !!state.isPickedUp;
+    }
+    if (els.completeBtn) {
+      els.completeBtn.disabled = !canAct;
+    }
+  }
 
   // Local storage helpers for pickup persistence across reloads
   function lsKeyPicked(id){ return 'lt_pick_' + String(id || ''); }
@@ -217,8 +231,6 @@
     if (els.pickupBadge) els.pickupBadge.classList.toggle('d-none', !state.isPickedUp);
     if (els.pickupBtn) {
       els.pickupBtn.classList.toggle('d-none', state.isPickedUp);
-      // Disable pickup until assignment is accepted
-      els.pickupBtn.disabled = !acceptedFlag;
     }
     if (!acceptedFlag) {
       showNoTrip('Pending assignment detected. Accept it to start tracking.');
@@ -227,6 +239,7 @@
       const mapEl = document.getElementById('map');
       if (mapEl) mapEl.classList.remove('d-none');
     }
+    updateActionButtons();
   }
 
   function startAssignmentPoll(){
@@ -249,6 +262,7 @@
           purgeRouteVisuals();
           try { await updateRoutedPaths(); } catch(_) { renderRoute(); }
         }
+        updateActionButtons();
       } catch (_) {}
     }, 10000);
   }
@@ -563,6 +577,14 @@
     const c = pos.coords || {};
     const lat = c.latitude, lng = c.longitude;
     if (!fmt.coordOk(lat) || !fmt.coordOk(lng)) return;
+    // Mark GPS ready on first valid fix
+    if (!state.gpsReady) {
+      state.gpsReady = true;
+      if (els.gpsAlert) els.gpsAlert.classList.add('d-none');
+      // Initialize map only once GPS is available
+      if (!state.map) initMap();
+    }
+    updateActionButtons();
     state.driverPos = [lat, lng];
     updateDriverMarker(lat, lng, c);
     renderRoute();
@@ -574,6 +596,20 @@
 
   function onGeoError(err){
     setStatus('Location error: ' + (err && err.message ? err.message : 'Unknown'));
+    // Stop tracking and require GPS to be turned on
+    state.gpsReady = false;
+    stopWatch();
+    // Hide map and show GPS required alert
+    const mapContainer = document.getElementById('map');
+    if (mapContainer) mapContainer.classList.add('d-none');
+    if (els.gpsAlert) {
+      els.gpsAlert.classList.remove('d-none');
+      const msg = 'GPS is off or unavailable. Please enable location services to start live tracking.';
+      try { els.gpsAlert.querySelector('.gps-text').textContent = msg; } catch(_) {}
+    }
+    // Clear visuals
+    purgeRouteVisuals();
+    updateActionButtons();
   }
 
   function startWatch(){
@@ -641,6 +677,10 @@
   function bindUi(){
     if (els.completeBtn) els.completeBtn.addEventListener('click', completeTrip);
     if (els.pickupBtn) els.pickupBtn.addEventListener('click', pickupTrip);
+    if (els.gpsRetryBtn) els.gpsRetryBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      startWatch();
+    });
   }
 
   function setupUnloadFlush(){
@@ -672,8 +712,10 @@
       if (pendingMsg) pendingMsg.classList.remove('d-none');
       return;
     }
-    initMap();
+    // GPS gate: start watcher first; map initializes on first fix
     setupUnloadFlush();
+    if (els.gpsAlert) els.gpsAlert.classList.remove('d-none');
+    updateActionButtons();
     startWatch();
     startAssignmentPoll();
   }

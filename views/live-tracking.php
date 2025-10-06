@@ -114,6 +114,18 @@ ob_start();
 
     <div id="noActiveTrip" class="alert alert-info d-none mb-3" role="alert"></div>
 
+    <div id="gpsRequired" class="alert alert-warning d-none mb-3" role="alert">
+      <div class="d-flex align-items-center">
+        <i class="fa-solid fa-location-crosshairs me-2"></i>
+        <span class="gps-text">GPS is off or unavailable. Please enable location services to start live tracking.</span>
+      </div>
+      <div class="mt-2">
+        <button id="gpsRetryBtn" class="btn btn-sm btn-primary">
+          <i class="fa-solid fa-rotate me-1"></i>Try Again
+        </button>
+      </div>
+    </div>
+
     <div id="map" class="mb-3"></div>
 
     <div class="sticky-actions">
