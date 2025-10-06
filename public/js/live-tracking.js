@@ -70,6 +70,8 @@
     pickupProcessing: false,
     assignPollId: null,
     gpsReady: false,
+    followDriver: true,
+    driverZoom: 16,
   };
 
   const fmt = {
@@ -133,6 +135,17 @@
     if (els.completeBtn) {
       els.completeBtn.disabled = !canAct;
     }
+  }
+
+  function recenterToDriver(){
+    if (!state.map || !state.driverPos) return;
+    state.followDriver = true;
+    try {
+      const z = (state.driverZoom || state.map.getZoom() || 16);
+      state.map.setView(L.latLng(state.driverPos[0], state.driverPos[1]), z, { animate: true });
+    } catch (_) {}
+    const b = document.getElementById('recenterBtn');
+    if (b) b.classList.add('d-none');
   }
 
   // Local storage helpers for pickup persistence across reloads
@@ -279,6 +292,32 @@
 
     // Group for all route lines to ensure we can clear them in one call
     state.routeGroup = L.layerGroup().addTo(map);
+
+    // Re-center control (bottom-right)
+    try {
+      const Recenter = L.Control.extend({
+        onAdd: function() {
+          const btn = L.DomUtil.create('button', 'btn btn-sm btn-light shadow recenter-control d-none');
+          btn.id = 'recenterBtn';
+          btn.type = 'button';
+          btn.innerHTML = '<i class="fa-solid fa-crosshairs me-1"></i>Re-center';
+          L.DomEvent.on(btn, 'click', function(e){ L.DomEvent.stopPropagation(e); recenterToDriver(); });
+          return btn;
+        },
+        onRemove: function(){}
+      });
+      state.recenterCtrl = new Recenter({ position: 'bottomright' });
+      state.recenterCtrl.addTo(map);
+    } catch (_) {}
+
+    // Disable follow on user drag and show the re-center button
+    try {
+      map.on('dragstart', function(){
+        state.followDriver = false;
+        const b = document.getElementById('recenterBtn');
+        if (b) b.classList.remove('d-none');
+      });
+    } catch (_) {}
 
     // If we already have trip coords, add markers
     placeTripMarkers();
@@ -489,14 +528,12 @@
       state.layers.driver.setLatLng(latlng);
     }
 
-    // First-fit include driver also
+    // First view: zoom in and center on driver; then keep centering while following
     if (!state.fittedOnce) {
-      const bounds = [];
-      if (state.layers.start) bounds.push(state.layers.start.getLatLng());
-      if (state.layers.dest) bounds.push(state.layers.dest.getLatLng());
-      bounds.push(L.latLng(lat, lng));
-      try { state.map.fitBounds(bounds, { padding: [30, 30] }); } catch (e) {}
+      try { state.map.setView(L.latLng(lat, lng), state.driverZoom || 16); } catch (e) {}
       state.fittedOnce = true;
+    } else if (state.followDriver) {
+      try { state.map.panTo(L.latLng(lat, lng), { animate: true }); } catch (e) {}
     }
   }
 
@@ -609,6 +646,10 @@
     }
     // Clear visuals
     purgeRouteVisuals();
+    // Reset first-fit so we re-zoom to driver on next valid fix
+    state.fittedOnce = false;
+    state.followDriver = false;
+    try { const b = document.getElementById('recenterBtn'); if (b) b.classList.add('d-none'); } catch(_) {}
     updateActionButtons();
   }
 
