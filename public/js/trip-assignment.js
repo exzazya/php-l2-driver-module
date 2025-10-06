@@ -53,13 +53,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!assignmentsTbody) return;
     if (!items.length) {
       assignmentsTbody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">No assignments available.</td></tr>`;
-      document.querySelector('.card.main-card .badge.bg-primary').textContent = '0';
+      const badge0 = document.querySelector('.current-card .badge.bg-primary');
+      if (badge0) badge0.textContent = '0';
       return;
     }
     assignmentsTbody.innerHTML = '';
     for (const a of items) {
       const tr = document.createElement('tr');
-      const tripLabel = `Trip #${a.trip_id || a.id || ''}`;
+      const tripId = a.trip_id || a.id || '';
+      const tripLabel = `Trip #${tripId}`;
       const vehicle = a.vehicle_label || a.plate_number || `#${a.vehicle_id ?? ''}`;
       const driver = a.driver_name || a.driver_full_name || '';
       const customer = a.customer_name || a.customer_full_name || '';
@@ -69,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const status = (a.status || '').toLowerCase();
 
       tr.innerHTML = `
-        <td><div class="fw-semibold text-primary">${escapeHtml(tripLabel)}</div><small class="text-muted">${escapeHtml(customer)}</small></td>
+        <td><div class="fw-semibold text-primary"><a href="#" class="trip-link">${escapeHtml(tripLabel)}</a></div><small class="text-muted">${escapeHtml(customer)}</small></td>
         <td><div>${escapeHtml(vehicle)}</div><small class="text-muted">${escapeHtml(driver)}</small></td>
         <td><div class="text-truncate" style="max-width:260px">${escapeHtml(route)}</div></td>
         <td><div>${escapeHtml(formatDateTime(sched))}</div><small class="text-success">${escapeHtml(fare)}</small></td>
@@ -78,6 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Wire buttons if present
       tr.addEventListener('click', (e) => {
+        const link = e.target.closest('.trip-link');
+        if (link) { e.preventDefault(); if (tripId) goToLiveTracking(tripId); return; }
         const btn = e.target.closest('button[data-action]');
         if (!btn) return;
         const action = btn.getAttribute('data-action');
@@ -87,7 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       assignmentsTbody.appendChild(tr);
     }
-    document.querySelector('.card.main-card .badge.bg-primary').textContent = String(items.length);
+    const badge = document.querySelector('.current-card .badge.bg-primary');
+    if (badge) badge.textContent = String(items.length);
   }
 
   function goToLiveTracking(tripId) {
@@ -127,13 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!completedTbody) return;
     if (!items.length) {
       completedTbody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">No completed assignments available.</td></tr>`;
-      document.querySelector('.card.main-card.mt-4 .badge.bg-success').textContent = '0';
+      const badge0 = document.querySelector('.completed-card .badge.bg-success');
+      if (badge0) badge0.textContent = '0';
       return;
     }
     completedTbody.innerHTML = '';
     for (const a of items) {
       const tr = document.createElement('tr');
-      const tripLabel = `Trip #${a.trip_id || a.id || ''}`;
+      const tripId = a.trip_id || a.id || '';
+      const tripLabel = `Trip #${tripId}`;
       const vehicle = a.vehicle_label || a.plate_number || `#${a.vehicle_id ?? ''}`;
       const driver = a.driver_name || a.driver_full_name || '';
       const route = `${a.start_location || ''} → ${a.destination || ''}`;
@@ -147,7 +154,8 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
       completedTbody.appendChild(tr);
     }
-    document.querySelector('.card.main-card.mt-4 .badge.bg-success').textContent = String(items.length);
+    const badge = document.querySelector('.completed-card .badge.bg-success');
+    if (badge) badge.textContent = String(items.length);
   }
 
   function renderDeclined(items) {

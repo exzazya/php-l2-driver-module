@@ -40,40 +40,11 @@ ob_start();
     </div>
 </div>
 
-<!-- Declined Assignments Table -->
-<div class="card main-card mt-4 declined-card">
-    <div class="card-header">
-        <h5 class="card-title">
-            <i class="fas fa-ban me-2 text-secondary"></i>
-            Declined Assignments
-            <span class="badge bg-secondary ms-2">0</span>
-        </h5>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-clean mb-0" id="declinedAssignmentsTable">
-                <thead>
-                    <tr>
-                        <th>Trip Details</th>
-                        <th>Vehicle & Driver</th>
-                        <th>Route Information</th>
-                        <th>Schedule</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td colspan="5" class="text-center text-muted">No declined assignments.</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
+<!-- Declined Assignments moved below Completed -->
 
 
 <!-- Current Assignments Table -->
-<div class="card main-card">
+<div class="card main-card current-card">
     <div class="card-header">
         <h5 class="card-title">
             <i class="fas fa-tasks me-2 text-primary"></i>
@@ -104,7 +75,7 @@ ob_start();
 </div>
 
 <!-- Completed Assignments Table -->
-<div class="card main-card mt-4">
+<div class="card main-card mt-4 completed-card">
     <div class="card-header">
         <h5 class="card-title">
             <i class="fas fa-check-double me-2 text-success"></i>
@@ -127,6 +98,37 @@ ob_start();
                 <tbody>
                     <tr>
                         <td colspan="5" class="text-center text-muted">No completed assignments available.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Declined Assignments Table -->
+<div class="card main-card mt-4 declined-card">
+    <div class="card-header">
+        <h5 class="card-title">
+            <i class="fas fa-ban me-2 text-secondary"></i>
+            Declined Assignments
+            <span class="badge bg-secondary ms-2">0</span>
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-clean mb-0" id="declinedAssignmentsTable">
+                <thead>
+                    <tr>
+                        <th>Trip Details</th>
+                        <th>Vehicle & Driver</th>
+                        <th>Route Information</th>
+                        <th>Schedule</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No declined assignments.</td>
                     </tr>
                 </tbody>
             </table>
