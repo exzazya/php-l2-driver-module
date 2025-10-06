@@ -147,6 +147,35 @@ try {
                 // Update reservation status to declined and clear driver/vehicle assignment
                 executeQuery("UPDATE reservations SET status = 'declined', driver_id = NULL, vehicle_id = NULL WHERE id = (SELECT reservation_id FROM trips WHERE id = ?)", [$tripId]);
 
+                // If the driver has no other ongoing assignments (accepted/in_progress/en_route), set driver status back to active
+                $ongoingAfterDeclineStmt = executeQuery(
+                    "SELECT COUNT(*) AS cnt
+                     FROM mobile_assignments ma
+                     JOIN trips t ON t.id = ma.trip_id
+                     WHERE ma.driver_id = ?
+                       AND ma.is_accepted = 1
+                       AND t.status IN ('accepted','in_progress','en_route')",
+                    [$driverId]
+                );
+                $ongoingAfterDecline = $ongoingAfterDeclineStmt ? (int)$ongoingAfterDeclineStmt->fetchColumn() : 0;
+                if ($ongoingAfterDecline === 0) {
+                    executeQuery("UPDATE drivers SET status = 'active' WHERE id = ?", [$driverId]);
+                }
+
+                // Similarly, if the vehicle for this trip isn't on any ongoing trips, set it back to active
+                $vehStmt = executeQuery('SELECT vehicle_id FROM trips WHERE id = ?', [$tripId]);
+                $vehId = $vehStmt ? (int)$vehStmt->fetchColumn() : 0;
+                if ($vehId > 0) {
+                    $vehOngoingStmt = executeQuery(
+                        "SELECT COUNT(*) FROM trips WHERE vehicle_id = ? AND status IN ('accepted','in_progress','en_route')",
+                        [$vehId]
+                    );
+                    $vehOngoing = $vehOngoingStmt ? (int)$vehOngoingStmt->fetchColumn() : 0;
+                    if ($vehOngoing === 0) {
+                        executeQuery("UPDATE vehicles SET status = 'active' WHERE id = ?", [$vehId]);
+                    }
+                }
+
                 executeQuery('INSERT INTO audits (actor_type, actor_id, action, entity_type, entity_id, metadata_json) VALUES (?,?,?,?,?,?)', [
                     'driver', $driverId, 'decline_assignment', 'trip', $tripId, json_encode(['assignment_id' => $ma['id'], 'reason' => (string)$declineReason])
                 ]);

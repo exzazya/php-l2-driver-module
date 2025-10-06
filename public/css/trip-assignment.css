@@ -8,9 +8,9 @@
   .stats-card { margin-bottom: .5rem; }
 
   /* Tables become card-like lists */
-  #assignmentsTable thead, #completedAssignmentsTable thead { display: none; }
+  #assignmentsTable thead, #completedAssignmentsTable thead, #declinedAssignmentsTable thead { display: none; }
 
-  #assignmentsTable tbody tr, #completedAssignmentsTable tbody tr {
+  #assignmentsTable tbody tr, #completedAssignmentsTable tbody tr, #declinedAssignmentsTable tbody tr {
     display: block;
     background: #fff;
     border: 1px solid #eee;
@@ -19,7 +19,7 @@
     margin-bottom: .75rem;
   }
 
-  #assignmentsTable tbody td, #completedAssignmentsTable tbody td {
+  #assignmentsTable tbody td, #completedAssignmentsTable tbody td, #declinedAssignmentsTable tbody td {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -30,7 +30,7 @@
   }
 
   /* Special case for empty-state rows (colspan) */
-  #assignmentsTable tbody td[colspan], #completedAssignmentsTable tbody td[colspan] {
+  #assignmentsTable tbody td[colspan], #completedAssignmentsTable tbody td[colspan], #declinedAssignmentsTable tbody td[colspan] {
     display: block;
     text-align: center;
     padding: 1rem 0;
@@ -50,4 +50,11 @@
 #completedAssignmentsTable tbody td:nth-child(3)::before { content: "Route Information"; font-weight: 600; color: #6c757d; }
 #completedAssignmentsTable tbody td:nth-child(4)::before { content: "Schedule & Fare"; font-weight: 600; color: #6c757d; }
 #completedAssignmentsTable tbody td:nth-child(5)::before { content: "Status"; font-weight: 600; color: #6c757d; }
+
+/* Labels for declined table (5 cols) */
+#declinedAssignmentsTable tbody td:nth-child(1)::before { content: "Trip Details"; font-weight: 600; color: #6c757d; }
+#declinedAssignmentsTable tbody td:nth-child(2)::before { content: "Vehicle & Driver"; font-weight: 600; color: #6c757d; }
+#declinedAssignmentsTable tbody td:nth-child(3)::before { content: "Route Information"; font-weight: 600; color: #6c757d; }
+#declinedAssignmentsTable tbody td:nth-child(4)::before { content: "Schedule"; font-weight: 600; color: #6c757d; }
+#declinedAssignmentsTable tbody td:nth-child(5)::before { content: "Status"; font-weight: 600; color: #6c757d; }
 }

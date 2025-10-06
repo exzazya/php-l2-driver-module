@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const assignmentsTbody = document.querySelector('#assignmentsTable tbody');
   const completedTbody = document.querySelector('#completedAssignmentsTable tbody');
+  const declinedTbody = document.querySelector('#declinedAssignmentsTable tbody');
   const refreshBtn = document.getElementById('refreshAssignments');
 
   if (refreshBtn) refreshBtn.addEventListener('click', () => loadAll());
@@ -8,14 +9,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadAll() {
     setTablePlaceholders();
-    const [pending, accepted, completed] = await Promise.all([
+    const [pending, accepted, completed, declined] = await Promise.all([
       fetchAssignments('pending'),
       fetchAssignments('accepted'),
-      fetchAssignments('completed')
+      fetchAssignments('completed'),
+      fetchAssignments('declined')
     ]);
 
     renderCurrent([...pending, ...accepted]);
     renderCompleted([...completed]);
+    renderDeclined([...declined]);
     updateStats({
       pending: pending.length,
       active: accepted.length,
@@ -43,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function setTablePlaceholders() {
     if (assignmentsTbody) assignmentsTbody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">Loading...</td></tr>`;
     if (completedTbody) completedTbody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">Loading...</td></tr>`;
+    if (declinedTbody) declinedTbody.innerHTML = `<tr><td colspan="5" class="text-muted text-center">Loading...</td></tr>`;
   }
 
   function renderCurrent(items) {
@@ -144,6 +148,47 @@ document.addEventListener('DOMContentLoaded', () => {
       completedTbody.appendChild(tr);
     }
     document.querySelector('.card.main-card.mt-4 .badge.bg-success').textContent = String(items.length);
+  }
+
+  function renderDeclined(items) {
+    if (!declinedTbody) return;
+    if (!Array.isArray(items) || items.length === 0) {
+      declinedTbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No declined assignments.</td></tr>';
+      const badge0 = document.querySelector('.declined-card .badge.bg-secondary');
+      if (badge0) badge0.textContent = '0';
+      return;
+    }
+    declinedTbody.innerHTML = '';
+    const currentDriverId = Number(window.CURRENT_DRIVER_ID || 0);
+    for (const a of items) {
+      const tr = document.createElement('tr');
+      const tripLabel = `Trip #${a.trip_id || a.id || ''}`;
+      const vehicle = a.vehicle_label || a.plate_number || (a.vehicle_id ? `#${a.vehicle_id}` : '—');
+      const driver = a.driver_name || a.driver_full_name || '';
+      const route = `${a.start_location || ''} → ${a.destination || ''}`;
+      const sched = a.pickup_time || a.scheduled_at || a.created_at || a.start_datetime || '';
+
+      const statusLower = String(a.status || '').toLowerCase();
+      const tripDriverId = (a.driver_id != null) ? Number(a.driver_id) : 0;
+      const isReassigned = tripDriverId > 0 && currentDriverId > 0 && tripDriverId !== currentDriverId && (
+        ['assigned','accepted','in_progress','en_route','arrived','ongoing','active','scheduled'].includes(statusLower)
+      );
+
+      const statusHtml =
+        '<span class="badge bg-secondary">Declined</span>' +
+        (isReassigned ? ' <span class="badge bg-warning text-dark ms-1">Reassigned</span>' : '');
+
+      tr.innerHTML = `
+        <td><div class="fw-semibold text-primary">${escapeHtml(tripLabel)}</div></td>
+        <td><div>${escapeHtml(vehicle)}</div><small class="text-muted">${escapeHtml(driver)}</small></td>
+        <td><div class="text-truncate" style="max-width:260px">${escapeHtml(route)}</div></td>
+        <td>${escapeHtml(formatDateTime(sched))}</td>
+        <td>${statusHtml}</td>
+      `;
+      declinedTbody.appendChild(tr);
+    }
+    const badge = document.querySelector('.declined-card .badge.bg-secondary');
+    if (badge) badge.textContent = String(items.length);
   }
 
   function renderStatusControls(a) {
@@ -248,8 +293,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateStats(stats) {
-    document.getElementById("pendingCount").innerText = stats.pending;
-    document.getElementById("activeCount").innerText = stats.active;
-    document.getElementById("completedCount").innerText = stats.completed;
+    const p = document.getElementById("pendingCount");
+    const a = document.getElementById("activeCount");
+    const c = document.getElementById("completedCount");
+    if (p) p.innerText = String(stats.pending);
+    if (a) a.innerText = String(stats.active);
+    if (c) c.innerText = String(stats.completed);
   }
 });

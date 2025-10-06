@@ -15,7 +15,8 @@ $styles = '<link rel="stylesheet" href="' . asset('css/trip-assignment.css') . '
 
 // Page-specific scripts (with cache-busting)
 $ver = date('Ymd-His');
-$scripts = '<script src="' . asset('js/trip-assignment.js') . '?v=' . $ver . '"></script>';
+$scripts = '<script>window.CURRENT_DRIVER_ID = ' . (int)($_SESSION['driver_id'] ?? 0) . ';</script>' .
+           '<script src="' . asset('js/trip-assignment.js') . '?v=' . $ver . '"></script>';
 
 // Start capturing content
 ob_start();
@@ -39,42 +40,37 @@ ob_start();
     </div>
 </div>
 
-<!-- Stats Cards -->
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm stats-card">
-            <div class="card-body text-center">
-                <div class="stats-icon bg-primary bg-opacity-10 text-primary mb-2">
-                    <i class="fas fa-clock"></i>
-                </div>
-                <h4 class="mb-1 text-primary" id="pendingCount">0</h4>
-                <small class="text-muted">Pending Trips</small>
-            </div>
-        </div>
+<!-- Declined Assignments Table -->
+<div class="card main-card mt-4 declined-card">
+    <div class="card-header">
+        <h5 class="card-title">
+            <i class="fas fa-ban me-2 text-secondary"></i>
+            Declined Assignments
+            <span class="badge bg-secondary ms-2">0</span>
+        </h5>
     </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm stats-card">
-            <div class="card-body text-center">
-                <div class="stats-icon bg-info bg-opacity-10 text-info mb-2">
-                    <i class="fas fa-route"></i>
-                </div>
-                <h4 class="mb-1 text-info" id="activeCount">0</h4>
-                <small class="text-muted">Active Trips</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-0 shadow-sm stats-card">
-            <div class="card-body text-center">
-                <div class="stats-icon bg-success bg-opacity-10 text-success mb-2">
-                    <i class="fas fa-check-circle"></i>
-                </div>
-                <h4 class="mb-1 text-success" id="completedCount">0</h4>
-                <small class="text-muted">Completed Today</small>
-            </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-clean mb-0" id="declinedAssignmentsTable">
+                <thead>
+                    <tr>
+                        <th>Trip Details</th>
+                        <th>Vehicle & Driver</th>
+                        <th>Route Information</th>
+                        <th>Schedule</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No declined assignments.</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
+
 
 <!-- Current Assignments Table -->
 <div class="card main-card">
