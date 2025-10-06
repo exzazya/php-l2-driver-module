@@ -9,6 +9,21 @@ $styles = '<link rel="stylesheet" href="' . asset('vendor/leaflet/leaflet.css') 
             .tracking-meta { font-size: 0.95rem; }
             .sticky-actions { position: sticky; bottom: 0; background: #fff; padding: 0.75rem; z-index: 5; border-top: 1px solid #eee; }
             @media (max-width: 768px) { #map { height: 65vh; min-height: 300px; } }
+            /* Marker icons and labels (Start/Destination) */
+            .marker-icon { background: transparent; border: none; }
+            .marker-icon i { text-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+            .leaflet-tooltip.marker-label {
+              background: transparent;
+              border: 0;
+              box-shadow: none;
+              padding: 0 4px;
+              font-size: 0.95rem;
+              font-weight: 500;
+              color: #495057; /* Bootstrap gray-700 */
+              pointer-events: none;
+            }
+            .leaflet-tooltip.marker-label:before, .leaflet-tooltip.marker-label:after { display: none; }
+            .leaflet-tooltip-right.marker-label { margin-left: 2px; }
           </style>';
 
 // Precompute tripId from query if present; otherwise pick driver's current assignment

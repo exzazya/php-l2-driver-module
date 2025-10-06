@@ -81,6 +81,25 @@
     coordOk: (v) => typeof v === 'number' && isFinite(v),
   };
 
+  // --- Custom Map Icons (Font Awesome) ---
+  function getStartIcon(){
+    return L.divIcon({
+      html: '<i class="fa-solid fa-location-dot text-primary" style="font-size:22px"></i>',
+      className: 'marker-icon',
+      iconSize: [24, 24],
+      iconAnchor: [12, 22]
+    });
+  }
+
+  function getDestIcon(){
+    return L.divIcon({
+      html: '<i class="fa-solid fa-flag-checkered text-danger" style="font-size:22px"></i>',
+      className: 'marker-icon',
+      iconSize: [24, 24],
+      iconAnchor: [12, 22]
+    });
+  }
+
   function qs(id){ return document.getElementById(id); }
 
   function initDomRefs(){
@@ -258,8 +277,8 @@
 
     if (!state.isPickedUp && startLL && fmt.coordOk(startLL[0]) && fmt.coordOk(startLL[1])) {
       if (!state.layers.start) {
-        state.layers.start = L.marker(startLL, { title: 'Start' }).addTo(state.map);
-        state.layers.start.bindPopup('Start');
+        state.layers.start = L.marker(startLL, { title: 'Start', icon: getStartIcon() }).addTo(state.map);
+        state.layers.start.bindTooltip('Start', { permanent: true, direction: 'right', offset: [8, 0], className: 'marker-label' });
       } else {
         state.layers.start.setLatLng(startLL);
       }
@@ -271,8 +290,8 @@
     }
     if (destLL && fmt.coordOk(destLL[0]) && fmt.coordOk(destLL[1])) {
       if (!state.layers.dest) {
-        state.layers.dest = L.marker(destLL, { title: 'Destination' }).addTo(state.map);
-        state.layers.dest.bindPopup('Destination');
+        state.layers.dest = L.marker(destLL, { title: 'Destination', icon: getDestIcon() }).addTo(state.map);
+        state.layers.dest.bindTooltip('Destination', { permanent: true, direction: 'right', offset: [8, 0], className: 'marker-label' });
       } else {
         state.layers.dest.setLatLng(destLL);
       }
