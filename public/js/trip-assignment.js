@@ -200,10 +200,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const isReassigned = tripDriverId > 0 && currentDriverId > 0 && tripDriverId !== currentDriverId && (
         ['assigned','accepted','in_progress','en_route','arrived','ongoing','active','scheduled'].includes(statusLower)
       );
+      const declineReason = (a.decline_reason || a.reason || '').toString();
 
       const statusHtml =
         '<span class="badge bg-secondary">Declined</span>' +
-        (isReassigned ? ' <span class="badge bg-warning text-dark ms-1">Reassigned</span>' : '');
+        (isReassigned ? ' <span class="badge bg-warning text-dark ms-1">Reassigned</span>' : '') +
+        (declineReason ? `<div class="small text-muted mt-1">Reason: ${escapeHtml(declineReason)}</div>` : '');
 
       tr.innerHTML = `
         <td><div class="fw-semibold text-primary">${escapeHtml(tripLabel)}</div></td>
@@ -295,9 +297,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmDecline = window.confirm('Are you sure you want to decline this assignment?');
     if (!confirmDecline) return; // user cancelled
 
-    // Step 2: optional reason (cancel here means proceed without reason, not auto-decline earlier)
-    const reasonInput = window.prompt('Reason for declining? (optional)');
-    const reason = (reasonInput && reasonInput.trim()) ? reasonInput.trim() : null;
+    // Step 2: require a non-empty reason; allow cancel to abort
+    let reason = null;
+    while (true) {
+      const input = window.prompt('Please enter a reason for declining (required):');
+      if (input === null) { return; } // user canceled -> abort decline
+      const trimmed = String(input).trim();
+      if (trimmed.length > 0) { reason = trimmed; break; }
+      alert('Decline reason is required.');
+    }
 
     const btns = document.querySelectorAll('button[data-action]');
     btns.forEach(b => b.disabled = true);
