@@ -3,6 +3,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const completedTbody = document.querySelector('#completedAssignmentsTable tbody');
   const declinedTbody = document.querySelector('#declinedAssignmentsTable tbody');
   const refreshBtn = document.getElementById('refreshAssignments');
+  let HAS_ACTIVE_TRIP = false; // computed each load
+
+  function notify(type, message) {
+    try {
+      if (typeof window.pushNotification === 'function') { window.pushNotification(type, message, 3500); return; }
+      if (typeof window.showToast === 'function') { window.showToast(message, type, 3500); return; }
+    } catch (_) {}
+    alert(String(message || ''));
+  }
 
   if (refreshBtn) refreshBtn.addEventListener('click', () => loadAll());
   loadAll();
@@ -15,6 +24,12 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchAssignments('completed'),
       fetchAssignments('declined')
     ]);
+
+    // Determine if driver has an active trip (accepted/en_route/in_progress)
+    HAS_ACTIVE_TRIP = Array.isArray(accepted) && accepted.some(x => {
+      const st = String(x.status || '').toLowerCase();
+      return st === 'accepted' || st === 'in_progress' || st === 'en_route' || x.is_accepted == 1;
+    });
 
     renderCurrent([...pending, ...accepted]);
     renderCompleted([...completed]);
@@ -85,6 +100,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = e.target.closest('button[data-action]');
         if (!btn) return;
         const action = btn.getAttribute('data-action');
+        if (btn.disabled && action === 'accept') {
+          notify('warning', 'You currently have an active trip. Finish it first to accept new assignments.');
+          return;
+        }
         if (action === 'accept') acceptAssignment(a);
         if (action === 'decline') declineAssignment(a);
       });
@@ -208,9 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<span class="badge bg-secondary">Declined</span>`;
     }
     // Pending -> show Accept/Decline
+    const disabled = (typeof HAS_ACTIVE_TRIP !== 'undefined' && HAS_ACTIVE_TRIP);
+    const acceptAttrs = disabled ? 'disabled title="Finish your current trip first"' : '';
     return `
       <div class="btn-group btn-group-sm" role="group">
-        <button type="button" class="btn btn-success" data-action="accept"><i class="fas fa-check me-1"></i>Accept</button>
+        <button type="button" class="btn btn-success" data-action="accept" ${acceptAttrs}><i class="fas fa-check me-1"></i>Accept</button>
         <button type="button" class="btn btn-outline-danger" data-action="decline"><i class="fas fa-times me-1"></i>Decline</button>
       </div>
     `;
@@ -241,6 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // If server says you already have an ongoing trip, redirect to the current accepted one
         const msg = (data && data.message) ? String(data.message) : '';
         if (res.status === 409 || /ongoing trip/i.test(msg)) {
+          try { notify('warning', msg || 'You currently have an active trip. Redirecting to it...'); } catch(_) {}
+          // short pause for the toast, then locate current trip
+          await new Promise(r => setTimeout(r, 1200));
           const listUrl = (window.publicUrl ? window.publicUrl('api/assignments.php?status=accepted') : 'api/assignments.php?status=accepted');
           try {
             const r2 = await fetch(listUrl, { credentials: 'same-origin' });
@@ -253,6 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
               return;
             }
           } catch (_) {}
+          throw new Error(msg || 'Failed to accept trip');
         }
         throw new Error(msg || 'Failed to accept trip');
       }
@@ -263,11 +288,17 @@ document.addEventListener('DOMContentLoaded', () => {
       btns.forEach(b => b.disabled = false);
     }
   }
-
   async function declineAssignment(a) {
     const tripId = a.trip_id || a.id;
     if (!tripId) return;
-    const reason = prompt('Reason for declining? (optional)') || null;
+    // Step 1: confirmation dialog to prevent accidental taps
+    const confirmDecline = window.confirm('Are you sure you want to decline this assignment?');
+    if (!confirmDecline) return; // user cancelled
+
+    // Step 2: optional reason (cancel here means proceed without reason, not auto-decline earlier)
+    const reasonInput = window.prompt('Reason for declining? (optional)');
+    const reason = (reasonInput && reasonInput.trim()) ? reasonInput.trim() : null;
+
     const btns = document.querySelectorAll('button[data-action]');
     btns.forEach(b => b.disabled = true);
     try {
