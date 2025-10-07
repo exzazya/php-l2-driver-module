@@ -114,7 +114,7 @@ try {
                      JOIN trips t ON t.id = ma.trip_id
                      WHERE ma.driver_id = ?
                        AND ma.is_accepted = 1
-                       AND t.status IN ('accepted','in_progress','en_route')
+                       AND t.status IN ('accepted','in_progress','en_route','arrived')
                        AND t.id <> ?",
                     [$driverId, $tripId]
                 );

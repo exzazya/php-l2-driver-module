@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Determine if driver has an active trip (accepted/en_route/in_progress)
     HAS_ACTIVE_TRIP = Array.isArray(accepted) && accepted.some(x => {
       const st = String(x.status || '').toLowerCase();
-      return st === 'accepted' || st === 'in_progress' || st === 'en_route' || x.is_accepted == 1;
+      return st === 'accepted' || st === 'in_progress' || st === 'en_route' || st === 'arrived' || x.is_accepted == 1;
     });
 
     renderCurrent([...pending, ...accepted]);
